@@ -1,0 +1,22 @@
+# Changelog
+## [Unreleased]
+- Refine `/bb-groomflow/v1/board` response with ordered stage metadata, visibility mask flags, and lobby/public data scrubbing.
+- Introduce `wp bbgf` WP-CLI stubs for visits inspection and production snapshot preparation.
+- Add `/stats/daily` and `/stats/stage-averages` REST endpoints for reporting dashboards.
+- Add `/stats/service-mix` endpoint delivering service/package usage statistics.
+- Scaffold stage-triggered notifications with `bbgf_visit_stage_changed` and `bbgf_notification_stage_queued` hooks tied into visit moves.
+- Persist notification deliveries to `wp_bb_notification_logs` with status metadata (stage, recipients, send outcome), add Notification Activity filters (search/date range/stage/status/template), and surface CSV export + resend controls.
+- Sprint 0 enhancements: register roles/capabilities, build the admin menu shell, and render the interactive placeholder Kanban board/shortcode.
+- Add Vite-driven asset pipeline (`npm run build`) plus Elementor widget skeleton wired to the preview board.
+- Introduce `bb-groomflow/v1` namespace with `/health` endpoint and document the delivery flow (README + workflow updates).
+- Establish database schema scaffolding with `BBGF_DB_VERSION`, install/upgrade helpers, and seed starter data for services, flags, and the default view.
+- Add WordPress admin UI for behavior flags with CRUD actions, nonce protection, and WP_List_Table rendering.
+- Ship Clients & Guardians admin dashboards with create/update/delete flows, guardian linkage, and sortable lists.
+- Standardize all naming and settings on the `client` terminology (no legacy dog schema remains).
+- Expose `/clients` REST endpoints with search/pagination and tighten admin package validation to honor selected services reliably.
+- Expand the emoji picker catalog with additional species/status icons and sync selected services to the server via hidden field fallback.
+- Bootstrap WordPress plugin scaffold with activation hooks, shortcode placeholder, and admin shell.
+- Add manual build tooling (`scripts/build_plugin_zip.sh`) and PHPCS ruleset.
+- Provision Docker WordPress stack, production-sync loader script, and workflow documentation for stateless agents.
+- Expand product specification, roadmap, sprint plans, and architecture docs to support feature planning.
+- Document change-management process (AGENTS.md + `docs/CHANGE_MANAGEMENT.md`) so agents can collaborate on pivots safely.

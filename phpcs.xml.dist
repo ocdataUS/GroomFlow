@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset name="Bubbles &amp; Bows GroomFlow">
+    <description>WordPress Coding Standards for the GroomFlow plugin.</description>
+    <config name="installed_paths" value="${WPCS_DIR}" />
+    <arg name="extensions" value="php" />
+    <arg value="ps" />
+
+    <file>plugin/bb-groomflow</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/build/*</exclude-pattern>
+
+    <rule ref="WordPress" />
+    <rule ref="WordPress-Extra" />
+    <rule ref="WordPress-Docs" />
+</ruleset>

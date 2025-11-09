@@ -1,0 +1,24 @@
+# Breadcrumb
+- **Task asked:** Finish remaining Sprint 3 UX polish (lobby layout, read-only behaviour) and prep Docker build for PO testing.
+- **Plan:** Review existing sprint implementation → adjust lobby/read-only presentation (CSS/JS/PHP) → rebuild assets, ship ZIP to Docker, and log QA artifacts.
+- **Files changed:** plugin/bb-groomflow/assets/src/index.js, plugin/bb-groomflow/assets/src/style.scss, plugin/bb-groomflow/includes/class-plugin.php, QA_TOOLBELT.md, docs/breadcrumbs/2025-10-31-lobby-polish.md
+- **Commands executed:**
+  - `eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519_codex`
+  - `ssh -T git@github.com`
+  - `npm run build`
+  - `bash scripts/build_plugin_zip.sh`
+  - `cd docker && docker compose up -d`
+  - `cd docker && docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/`
+  - `cd docker && docker compose run --rm -T wpcli wp plugin install bb-groomflow-0.1.0-dev.zip --force --activate`
+  - `cd docker && docker compose run --rm -T wpcli wp db query "UPDATE wp_7ptz4bz8ht_bb_views SET type='lobby', allow_switcher=0, show_guardian=0 WHERE slug='full-view'"`
+  - `cd docker && docker compose run --rm -T wpcli wp post update 394 --post_content='[bbgf_board view="full-view"]'`
+  - `cd docker && docker compose run --rm -T wpcli wp db query "INSERT INTO wp_7ptz4bz8ht_bb_visits (client_id, guardian_id, view_id, current_stage, status, check_in_at, timer_started_at, timer_elapsed_seconds, created_at, updated_at, public_notes) VALUES (...)"` *(seed sample lobby visits)*
+  - `cd docker && docker compose run --rm -T wpcli wp db query "SELECT id, current_stage, view_id FROM wp_7ptz4bz8ht_bb_visits WHERE view_id=3"`
+  - `cd docker && docker compose run --rm -T wpcli wp post update 394 --post_content='[bbgf_board view="full-view" mode="display"]'`
+  - `cd docker && docker compose run --rm -T wpcli wp post create --post_type=page --post_title='GroomFlow Staff Board' --post_status=publish --post_content='[bbgf_board view="day-flow" mode="interactive"]'`
+  - `cd docker && docker compose run --rm -T wpcli wp db query "INSERT INTO wp_7ptz4bz8ht_bb_visits (client_id, guardian_id, view_id, current_stage, status, check_in_at, timer_started_at, timer_elapsed_seconds, created_at, updated_at, public_notes) VALUES (...view_id=1 ...)"` *(seed staff board demo visits)*
+  - `cd docker && docker compose run --rm -T wpcli wp plugin install bb-groomflow-0.1.0-dev.zip --force --activate`
+  - `qa-phpcs plugin/bb-groomflow`
+- **Tests & results:** `qa-phpcs plugin/bb-groomflow` → warnings only (expected custom caps/schema notices, plus legacy notification alignment); artifact `/opt/qa/artifacts/phpcs-1761935117.txt`. Lobby view seeded with four sample visits (stages check-in → ready) and verified via `bbgfBoardSettings.initialBoard` dump on `/groomflow-test/`. Staff board page (`/groomflow-staff-board/`) loads the interactive board with dropdown view switcher, seeded demo visits (IDs 15–18), modal close behavior verified, and placeholder dog images render when visits have no photos.
+- **Tips & Tricks:** Display boards now toggle via `data-board-mode="display"`; lobby/kiosk pages should copy the ZIP into `/var/www/html/` (`docker compose cp …`) before running `wp plugin install` to avoid WordPress.org fetch attempts. If a page relies solely on the shortcode, the plugin now stubs `window.elementorFrontendConfig` so Elementor’s frontend JS doesn’t fatal. Use `[bbgf_board view="slug" mode="display"]` for read-only kiosks, `[bbgf_board view="slug" mode="interactive"]` for staff boards; set `fullscreen="false"` if you need to hide the display button.
+- **Remaining work:** Run full admin happy-path + lobby/staff board smoke in Docker (drag/drop, modal, filters) and capture screenshots for PO review; optionally link lobby visits to services/flags for richer chips and adjust Elementor template to hide theme chrome on staff view if desired.

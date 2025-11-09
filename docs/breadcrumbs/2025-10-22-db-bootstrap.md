@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Begin Sprint 1 foundations by designing the schema and wiring database install/upgrade routines.
+- **Plan:** 1) Define table blueprints and helpers. 2) Hook install/upgrade with `BBGF_DB_VERSION`. 3) Seed starter data (services, flags, default view). 4) Verify in Docker + lint. 5) Update docs/change log.
+- **Files changed:** plugin/bb-groomflow/bb-groomflow.php; plugin/bb-groomflow/includes/class-plugin.php; plugin/bb-groomflow/includes/database/class-schema.php; plugin/bb-groomflow/includes/database/index.php; docs/ARCHITECTURE.md; docs/DB_SCHEMA.md; CHANGELOG.md; docs/breadcrumbs/2025-10-22-db-bootstrap.md (this file); QA_TOOLBELT.md.
+- **Commands executed:** npm run build; bash scripts/build_plugin_zip.sh; docker compose up -d; docker compose exec wordpress rm -rf /var/www/html/wp-content/plugins/bb-groomflow; docker compose run --rm -T wpcli wp plugin install ... --force --activate; docker compose run --rm -T wpcli wp option get bbgf_db_version; docker compose run --rm -T wpcli wp db query 'SELECT slug FROM wp_7ptz4bz8ht_bb_services'; qa-phpcs plugin/bb-groomflow;
+- **Tests & results:** `qa-phpcs plugin/bb-groomflow` → /opt/qa/artifacts/phpcs-1761160446.txt; Verified seeded data via WP-CLI query; option `bbgf_db_version` now `1.0.0`.
+- **Tips & Tricks:** If CLI activation skips DB install, manually run `wp eval 'include_once WP_PLUGIN_DIR . "/bb-groomflow/bb-groomflow.php"; bbgf()->bootstrap_elementor();'` (Elementor) and reflection call to seed DB when needed.
+- **Remaining work:** Build CRUD admin screens, settings UI, and continue Sprint 1 deliverables.

@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Kick off Sprint 2 by exposing Guardians CRUD over REST while keeping Sprint 1 docs/QA expectations current.
+- **Plan:** Update Sprint 1 status notes → build Guardians REST controller + wire-up → run PHPCS, package/install, and exercise the new routes via WP-CLI before documenting tips/artifacts.
+- **Files changed:** docs/sprints/Sprint-1.md; plugin/bb-groomflow/includes/api/class-guardians-controller.php; plugin/bb-groomflow/includes/class-plugin.php; docs/API.md; QA_TOOLBELT.md.
+- **Commands executed:** `qa-phpcs plugin/bb-groomflow`; `bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow-0.1.0-dev.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow-0.1.0-dev.zip --force --activate`; `docker compose run --rm -T wpcli wp eval '...rest_do_request("/bb-groomflow/v1/guardians")...'` (GET + POST smoke tests); `docker compose run --rm -T wpcli wp eval 'global $wpdb; $wpdb->delete(...)';`.
+- **Tests & results:** PHPCS clean (`/opt/qa/artifacts/phpcs-1761715009.txt`). GET `/bb-groomflow/v1/guardians` returns existing contacts with null-safe fields; POST creates a guardian record and responds with timestamps, then removed to keep DB tidy.
+- **Tips & Tricks:** WP-CLI + `rest_do_request()` lets you impersonate `codexadmin` and hit the new endpoints directly—no cookies/nonces needed during Docker QA.
+- **Remaining work:** Extend REST coverage to the remaining directory entities (services, packages, flags, views) and start scaffolding visit/stage endpoints per Sprint 2.

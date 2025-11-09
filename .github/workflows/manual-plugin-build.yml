@@ -1,0 +1,10 @@
+name: Manual Plugin Build
+on: { workflow_dispatch: {} }
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: (Placeholder) Manual build happens in implementation repo
+        run: echo "Manual build script will live in implementation repo."

@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Confirm the Settings admin UI matches Sprint 1 requirements and that saves propagate cleanly without leaving lint or data issues.
+- **Plan:** 1) Audit current PHP/view templates against SPEC defaults. 2) Exercise the form inside Docker WordPress (submit new values, ensure sanitization + caching behave). 3) Run PHPCS and log findings.
+- **Files changed:** _None (QA & verification only)._
+- **Commands executed:** `curl -s -b /tmp/wp-cookies.txt http://localhost:8083/wp-admin/admin.php?page=bbgf-settings > /tmp/bbgf-settings.html`; `curl -s -b /tmp/wp-cookies.txt -c /tmp/wp-cookies.txt -d "bbgf_settings_nonce=0f0ef9f78e" … http://localhost:8083/wp-admin/admin.php?page=bbgf-settings`; `docker compose run --rm -T wpcli wp db query "SELECT option_value FROM wp_7ptz4bz8ht_bb_options WHERE option_name='bbgf_settings'"`; `qa-phpcs plugin/bb-groomflow`.
+- **Tests & results:** Form submission stored new values (poll interval 70, thresholds 12/18/45, lobby/photo toggles, branding colors). DB query shows sanitized payload persisted with expected ints/hex colors. `qa-phpcs` remains clean (`/opt/qa/artifacts/phpcs-1761713799.txt`).
+- **Tips & Tricks:** When scripting admin form QA, reuse the fresh `bbgf_settings_nonce` pulled from the page and omit checkbox fields you want cleared—WordPress treats absent fields as “off,” which keeps the sanitized booleans aligned with UI expectations.
+- **Remaining work:** With Services/Packages/Views search live and settings validated, next step is to finish Views CRUD polish (stage editor UX) and then advance into Sprint 2 REST scaffolding.

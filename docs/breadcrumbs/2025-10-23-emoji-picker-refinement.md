@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Replace the broken web-component emoji picker with a reliable in-plugin selector that behaves like the color picker for staff.
+- **Plan:** 1) Remove the vendor dependency and popover wiring. 2) Ship a lightweight React/Popover emoji board with search + ~130 curated icons (expanded per feedback). 3) Update CSS/enqueues and verify the ZIP in Docker.
+- **Files changed:** package.json; package-lock.json; plugin/bb-groomflow/assets/css/admin.css; plugin/bb-groomflow/assets/js/admin.js; plugin/bb-groomflow/includes/admin/class-flags-admin.php; plugin/bb-groomflow/includes/admin/class-packages-admin.php; plugin/bb-groomflow/includes/admin/class-services-admin.php; plugin/bb-groomflow/includes/admin/class-settings-admin.php; plugin/bb-groomflow/includes/admin/class-views-admin.php; build/bb-groomflow-0.1.0-dev.zip (regenerated).
+- **Commands executed:** npm uninstall emoji-picker-element puppeteer; bash scripts/build_plugin_zip.sh; docker compose cp …/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/…; docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow-0.1.0-dev.zip --force --activate; curl -b /tmp/bbgf-cookies.txt http://localhost:8083/wp-admin/admin.php?page=bbgf-flags.
+- **Tests & results:** Manual curl confirms new bundle enqueues (JS renders client-side so HTML snapshot remains minimal). Verified Docker plugin reinstall succeeds and no vendor script loads.
+- **Tips & Tricks:** Search is tokenized on simple keywords—try “vip”, “bath”, “alert”, “sunny”, “anxious”, “loyal”, etc., to slice through the expanded catalog quickly.
+- **Remaining work:** None – review in browser to confirm the new button/grid meets UX expectations.

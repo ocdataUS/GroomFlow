@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Begin Sprint 3 delivery by wiring the Kanban board to live REST data with initial rendering and polling.
+- **Plan:** Localize the initial board payload and REST config → replace placeholder JS with a stateful renderer → add polling + manual refresh that respects `modified_after` → wire quick move buttons into the REST `POST /visits/{id}/move` flow → capture QA run.
+- **Files changed:** plugin/bb-groomflow/assets/src/index.js; plugin/bb-groomflow/assets/src/style.scss; plugin/bb-groomflow/assets/build/board.js; plugin/bb-groomflow/assets/build/board.css; plugin/bb-groomflow/includes/class-plugin.php
+- **Commands executed:** `npm run build` (multiple passes as features landed); `qa-phpcs plugin/bb-groomflow/includes/class-plugin.php`; `qa-phpcbf plugin/bb-groomflow/includes/class-plugin.php`
+- **Tests & results:** Latest PHPCS run (`/opt/qa/artifacts/phpcs-1761932499.txt`) clean aside from expected schema/cap warnings; PHPCBF alignment fixes captured in `/opt/qa/artifacts/phpcbf-1761932485.txt`.
+- **Tips & Tricks:** The polling layer merges REST deltas by removing updated visit IDs from all stage buckets before applying patches—handy when `modified_after` returns sparse payloads. Call `window.bbgfBoardRefresh()` in the console to force a full refresh without waiting for the interval. Quick moves and drag/drop set a pending state per visit; inspect `window.bbgfBoardStore.getState().pendingMoves` if a card appears stuck. Lobby/public mode now surfaces a badge, fullscreen toggle, and auto-refresh countdown—use `document.exitFullscreen()` if your browser blocks programmatic exit.
+- **Remaining work:** Run the full QA/install loop for Sprint 3 (package ZIP, Docker install, QA_TOOLBELT sweep) and capture final docs.

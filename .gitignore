@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+node_modules/
+vendor/
+/build/
+*.log
+*.tmp
+.env
+.env.local
+.fleet/
+.idea/
+.vscode/
+docs/context/
+docker/.env
+docker/prod-sync/
+SFTP.txt

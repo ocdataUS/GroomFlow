@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Deliver Sprint 2 WP-CLI scaffolding so stateless agents can inspect visits and prep production snapshots without leaving the terminal.
+- **Plan:** 1) Re-check Sprint 2 expectations for CLI helpers. 2) Add command classes and bootstrap them from the plugin. 3) Document usage, run PHPCS, smoke-test via Docker WP-CLI, and capture notes for the next agent.
+- **Files changed:** plugin/bb-groomflow/includes/class-plugin.php; plugin/bb-groomflow/includes/cli/class-base-command.php; plugin/bb-groomflow/includes/cli/class-visits-command.php; plugin/bb-groomflow/includes/cli/class-sync-command.php; docs/workflow.md; CHANGELOG.md; docs/breadcrumbs/2025-10-29-cli-scaffolding.md.
+- **Commands executed:** `qa-phpcs plugin/bb-groomflow`; `bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow-0.1.0-dev.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow-0.1.0-dev.zip --force --activate`; `docker compose run --rm -T wpcli wp bbgf visits list --limit=5`; `docker compose run --rm -T wpcli wp bbgf sync prepare --dry-run`.
+- **Tests & results:** PHPCS clean (`/opt/qa/artifacts/phpcs-1761751536.txt`). CLI smoke tests confirm `wp bbgf visits list` emits tabular results (empty on fresh DB but command executes), and `wp bbgf sync prepare --dry-run` prints the expected checklist.
+- **Tips & Tricks:** CLI commands live under the `bbgf` namespace—append `--format=json` when you need machine-friendly output for scripting.
+- **Remaining work:** Stage-triggered notification scaffolding and REST stats endpoints are still open in Sprint 2.

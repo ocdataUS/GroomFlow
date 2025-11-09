@@ -1,0 +1,629 @@
+<?php
+/**
+ * Visits-related WP-CLI commands.
+ *
+ * @package BB_GroomFlow
+ */
+
+namespace BBGF\CLI;
+
+use BBGF\Plugin;
+use WP_CLI;
+use function WP_CLI\Utils\format_items;
+use function WP_CLI\Utils\get_flag_value;
+use function current_time;
+use function sanitize_email;
+use function sanitize_key;
+use function sanitize_text_field;
+use function sanitize_textarea_field;
+use function sanitize_title;
+use function wp_json_encode;
+
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+/**
+ * Provides data discovery helpers for the visits table.
+ */
+class Visits_Command extends Base_Command {
+	/**
+	 * Register the command with WP-CLI.
+	 *
+	 * @param Plugin $plugin Plugin instance.
+	 * @return void
+	 */
+	public static function register( Plugin $plugin ): void {
+		WP_CLI::add_command(
+			'bbgf visits',
+			new self( $plugin )
+		);
+	}
+
+	/**
+	 * List recent visits with optional stage/view filtering.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--stage=<stage_key>]
+	 * : Limit results to a specific pipeline stage.
+	 *
+	 * [--view=<view_slug>]
+	 * : Only include visits assigned to the given view slug.
+	 *
+	 * [--limit=<number>]
+	 * : Maximum number of records to return (default 20, max 100).
+	 *
+	 * [--format=<format>]
+	 * : Render output in a supported format (table, csv, json, yaml, ids).
+	 * ---
+	 * default: table
+	 * options:
+	 *   - table
+	 *   - csv
+	 *   - json
+	 *   - yaml
+	 *   - ids
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp bbgf visits list --stage=grooming --limit=10
+	 *     wp bbgf visits list --view=lobby-display --format=json
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Associative arguments.
+	 * @return void
+	 */
+	public function list( array $args, array $assoc_args ): void {
+		unset( $args ); // Unused.
+
+		$tables = $this->plugin->get_table_names();
+
+		$stage  = sanitize_key( (string) get_flag_value( $assoc_args, 'stage', '' ) );
+		$view   = sanitize_title( (string) get_flag_value( $assoc_args, 'view', '' ) );
+		$limit  = (int) get_flag_value( $assoc_args, 'limit', 20 );
+		$limit  = max( 1, min( 100, $limit ) );
+		$format = get_flag_value( $assoc_args, 'format', 'table' );
+
+		$conditions = array();
+		$sql_args   = array();
+
+		if ( '' !== $stage ) {
+			$conditions[] = 'v.current_stage = %s';
+			$sql_args[]   = $stage;
+		}
+
+		if ( '' !== $view ) {
+			$conditions[] = 'vw.slug = %s';
+			$sql_args[]   = $view;
+		}
+
+		$where = '';
+		if ( ! empty( $conditions ) ) {
+			$where = 'WHERE ' . implode( ' AND ', $conditions );
+		}
+
+		$sql_args[] = $limit;
+
+		$sql = $this->wpdb->prepare(
+			"SELECT v.id, c.name AS client, v.current_stage AS stage, v.status, v.updated_at
+			FROM {$tables['visits']} AS v
+			LEFT JOIN {$tables['clients']} AS c ON c.id = v.client_id
+			LEFT JOIN {$tables['views']} AS vw ON vw.id = v.view_id
+			{$where}
+			ORDER BY v.updated_at DESC
+			LIMIT %d",
+			...$sql_args
+		);
+
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		if ( empty( $rows ) ) {
+			$this->info( __( 'No visits found matching the requested filters.', 'bb-groomflow' ) );
+			return;
+		}
+
+		$data = array_map(
+			static function ( array $row ): array {
+				$row['updated_at'] = mysql2date( DATE_RFC3339, $row['updated_at'], true );
+				return $row;
+			},
+			$rows
+		);
+
+		format_items(
+			$format,
+			$data,
+			array( 'id', 'client', 'stage', 'status', 'updated_at' )
+		);
+	}
+
+	/**
+	 * Seed demo visits, clients, and guardians for local testing.
+	 *
+	 * ## OPTIONS
+	 *
+	 * @subcommand seed-demo
+	 *
+	 * [--count=<number>]
+	 * : Number of visits to generate per view (default 6, max 12).
+	 *
+	 * [--force]
+	 * : Remove existing visits before seeding demo data.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp bbgf visits seed-demo
+	 *     wp bbgf visits seed-demo --count=8 --force
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Associative arguments.
+	 * @return void
+	 */
+	public function seed_demo( array $args, array $assoc_args ): void {
+		unset( $args ); // Unused.
+
+		$tables = $this->plugin->get_table_names();
+		if ( empty( $tables['visits'] ) ) {
+			WP_CLI::error( __( 'Visit table is not registered. Run database migrations first.', 'bb-groomflow' ) );
+		}
+
+		$force = (bool) get_flag_value( $assoc_args, 'force', false );
+		$count = (int) get_flag_value( $assoc_args, 'count', 6 );
+		$count = max( 1, min( 12, $count ) );
+
+		if ( $force ) {
+			$this->truncate_visit_tables( $tables );
+		} else {
+			$existing = (int) $this->wpdb->get_var( "SELECT COUNT(*) FROM {$tables['visits']}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			if ( $existing > 0 ) {
+				WP_CLI::warning( __( 'Visits already exist. Re-run with --force to replace them.', 'bb-groomflow' ) );
+				return;
+			}
+		}
+
+		$views = $this->wpdb->get_results(
+			"SELECT id, slug, type FROM {$tables['views']} ORDER BY id ASC", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			ARRAY_A
+		);
+
+		if ( empty( $views ) ) {
+			WP_CLI::error( __( 'No board views found. Create at least one view before seeding demo data.', 'bb-groomflow' ) );
+		}
+
+		$service_map = $this->map_by_slug( $tables['services'], 'slug' );
+		$flag_map    = $this->map_by_slug( $tables['flags'], 'slug' );
+
+		if ( empty( $service_map ) ) {
+			WP_CLI::warning( __( 'No services found. Demo visits will be created without service chips.', 'bb-groomflow' ) );
+		}
+
+		$profiles = $this->get_demo_profiles();
+		$visit_service = $this->plugin->visit_service();
+		$now_mysql     = $this->plugin->now();
+		$now_utc       = current_time( 'timestamp', true );
+
+		$created = 0;
+
+		foreach ( $views as $view ) {
+			$stage_keys = $this->get_stage_keys_for_view( (int) $view['id'], $tables );
+			if ( empty( $stage_keys ) ) {
+				WP_CLI::warning(
+					sprintf(
+						/* translators: %s: view slug */
+						__( 'Skipping view "%s" because it has no configured stages.', 'bb-groomflow' ),
+						$view['slug']
+					)
+				);
+				continue;
+			}
+
+			for ( $index = 0; $index < $count; $index++ ) {
+				$profile       = $profiles[ $index % count( $profiles ) ];
+				$stage_key     = $stage_keys[ $index % count( $stage_keys ) ];
+				$guardian_id   = $this->get_or_create_guardian( $profile['guardian'], $tables, $now_mysql );
+				$client_id     = $this->get_or_create_client( $profile['client'], $guardian_id, $tables, $now_mysql );
+				$service_ids   = array();
+				$flag_ids      = array();
+
+				foreach ( $profile['services'] as $service_slug ) {
+					if ( isset( $service_map[ $service_slug ] ) ) {
+						$service_ids[] = (int) $service_map[ $service_slug ]['id'];
+					}
+				}
+
+				foreach ( $profile['flags'] as $flag_slug ) {
+					if ( isset( $flag_map[ $flag_slug ] ) ) {
+						$flag_ids[] = (int) $flag_map[ $flag_slug ]['id'];
+					}
+				}
+
+				$minutes_ago  = ( $index * 12 ) + rand( 6, 28 );
+				$check_in_ts  = $now_utc - ( $minutes_ago * MINUTE_IN_SECONDS );
+				$check_in_at  = gmdate( 'Y-m-d H:i:s', $check_in_ts );
+				$elapsed_secs = max( 180, (int) ( $now_utc - $check_in_ts ) );
+
+				$status = 'in_progress';
+				if ( 'ready' === $stage_key ) {
+					$status = 'ready';
+				}
+
+				$instructions  = sanitize_textarea_field( $profile['instructions'] );
+				$public_notes  = sanitize_textarea_field( $profile['public_notes'] );
+				$private_notes = sanitize_textarea_field( $profile['private_notes'] );
+
+				$result = $visit_service->create_visit(
+					array(
+						'client_id'            => $client_id,
+						'guardian_id'          => $guardian_id,
+						'view_id'              => (int) $view['id'],
+						'current_stage'        => $stage_key,
+						'status'               => $status,
+						'check_in_at'          => $check_in_at,
+						'check_out_at'         => null,
+						'assigned_staff'       => 0,
+						'instructions'         => $instructions,
+						'private_notes'        => $private_notes,
+						'public_notes'         => $public_notes,
+						'timer_elapsed_seconds'=> $elapsed_secs,
+					),
+					$service_ids,
+					$flag_ids
+				);
+
+				if ( is_wp_error( $result ) ) {
+					WP_CLI::error( $result->get_error_message() );
+				}
+
+				$created++;
+			}
+		}
+
+		WP_CLI::success(
+			sprintf(
+				/* translators: 1: number of visits 2: number of views */
+				__( 'Seeded %1$d demo visits across %2$d view(s).', 'bb-groomflow' ),
+				$created,
+				count( $views )
+			)
+		);
+	}
+
+	/**
+	 * Remove existing visit data so demo records can be created cleanly.
+	 *
+	 * @param array<string,string> $tables Table map.
+	 * @return void
+	 */
+	private function truncate_visit_tables( array $tables ): void {
+		$targets = array( 'visit_services', 'visit_flags', 'stage_history', 'visits' );
+		foreach ( $targets as $key ) {
+			if ( empty( $tables[ $key ] ) ) {
+				continue;
+			}
+			$this->wpdb->query( "DELETE FROM {$tables[$key]}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		}
+	}
+
+	/**
+	 * Retrieve table rows keyed by slug.
+	 *
+	 * @param string $table Table name.
+	 * @param string $slug_column Slug column.
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function map_by_slug( string $table, string $slug_column ): array {
+		$rows = $this->wpdb->get_results(
+			"SELECT * FROM {$table}", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			ARRAY_A
+		);
+
+		if ( empty( $rows ) ) {
+			return array();
+		}
+
+		$map = array();
+		foreach ( $rows as $row ) {
+			$slug = sanitize_key( (string) ( $row[ $slug_column ] ?? '' ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+			$map[ $slug ] = $row;
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Ensure a guardian exists with the provided demo data.
+	 *
+	 * @param array<string,string> $guardian Guardian seed data.
+	 * @param array<string,string> $tables   Table map.
+	 * @param string               $timestamp Current timestamp.
+	 * @return int Guardian ID.
+	 */
+	private function get_or_create_guardian( array $guardian, array $tables, string $timestamp ): int {
+		$email = sanitize_email( $guardian['email'] ?? '' );
+		$existing = 0;
+
+		if ( $email ) {
+			$existing = (int) $this->wpdb->get_var(
+				$this->wpdb->prepare(
+					"SELECT id FROM {$tables['guardians']} WHERE email = %s LIMIT 1",
+					$email
+				)
+			);
+		}
+
+		if ( $existing > 0 ) {
+			return $existing;
+		}
+
+		$data = array(
+			'first_name'        => sanitize_text_field( $guardian['first_name'] ?? '' ),
+			'last_name'         => sanitize_text_field( $guardian['last_name'] ?? '' ),
+			'email'             => $email,
+			'phone_mobile'      => sanitize_text_field( $guardian['phone'] ?? '' ),
+			'preferred_contact' => 'phone',
+			'notes'             => sanitize_textarea_field( $guardian['notes'] ?? '' ),
+			'meta'              => wp_json_encode( array( 'source' => 'bbgf-demo' ) ),
+			'created_at'        => $timestamp,
+			'updated_at'        => $timestamp,
+		);
+
+		$result = $this->wpdb->insert(
+			$tables['guardians'],
+			$data,
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+		);
+
+		if ( false === $result ) {
+			WP_CLI::error( __( 'Unable to insert demo guardian.', 'bb-groomflow' ) );
+		}
+
+		return (int) $this->wpdb->insert_id;
+	}
+
+	/**
+	 * Ensure a client exists with the provided demo data.
+	 *
+	 * @param array<string,mixed>  $client     Client seed data.
+	 * @param int                  $guardian_id Guardian ID.
+	 * @param array<string,string> $tables     Table map.
+	 * @param string               $timestamp  Current timestamp.
+	 * @return int Client ID.
+	 */
+	private function get_or_create_client( array $client, int $guardian_id, array $tables, string $timestamp ): int {
+		$slug = sanitize_title( 'demo-' . ( $client['slug'] ?? $client['name'] ?? uniqid( 'client', true ) ) );
+
+		$existing = (int) $this->wpdb->get_var(
+			$this->wpdb->prepare(
+				"SELECT id FROM {$tables['clients']} WHERE slug = %s LIMIT 1",
+				$slug
+			)
+		);
+
+		if ( $existing > 0 ) {
+			return $existing;
+		}
+
+		$data = array(
+			'name'               => sanitize_text_field( $client['name'] ?? '' ),
+			'slug'               => $slug,
+			'guardian_id'        => $guardian_id > 0 ? $guardian_id : 0,
+			'breed'              => sanitize_text_field( $client['breed'] ?? '' ),
+			'weight'             => isset( $client['weight'] ) ? (float) $client['weight'] : null,
+			'sex'                => sanitize_text_field( $client['sex'] ?? '' ),
+			'temperament'        => sanitize_text_field( $client['temperament'] ?? '' ),
+			'notes'              => sanitize_textarea_field( $client['notes'] ?? '' ),
+			'meta'               => wp_json_encode( array( 'source' => 'bbgf-demo' ) ),
+			'created_at'         => $timestamp,
+			'updated_at'         => $timestamp,
+		);
+
+		$result = $this->wpdb->insert(
+			$tables['clients'],
+			$data,
+			array( '%s', '%s', '%d', '%s', '%f', '%s', '%s', '%s', '%s', '%s' )
+		);
+
+		if ( false === $result ) {
+			WP_CLI::error( __( 'Unable to insert demo client.', 'bb-groomflow' ) );
+		}
+
+		return (int) $this->wpdb->insert_id;
+	}
+
+	/**
+	 * Get the ordered stage keys for a given view.
+	 *
+	 * @param int                  $view_id View ID.
+	 * @param array<string,string> $tables Table map.
+	 * @return array<int,string>
+	 */
+	private function get_stage_keys_for_view( int $view_id, array $tables ): array {
+		$rows = $this->wpdb->get_results(
+			$this->wpdb->prepare(
+				"SELECT stage_key FROM {$tables['view_stages']} WHERE view_id = %d ORDER BY sort_order ASC, id ASC",
+				$view_id
+			),
+			ARRAY_A
+		);
+
+		if ( ! empty( $rows ) ) {
+			return array_values(
+				array_filter(
+					array_map(
+						static function ( $row ) {
+							$stage = sanitize_key( (string) ( $row['stage_key'] ?? '' ) );
+							return '' === $stage ? null : $stage;
+						},
+						$rows
+					)
+				)
+			);
+		}
+
+		$library = $this->wpdb->get_results(
+			"SELECT stage_key FROM {$tables['stages']} ORDER BY sort_order ASC, id ASC", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			ARRAY_A
+		);
+
+		if ( empty( $library ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				array_map(
+					static function ( $row ) {
+						$stage = sanitize_key( (string) ( $row['stage_key'] ?? '' ) );
+						return '' === $stage ? null : $stage;
+					},
+					$library
+				)
+			)
+		);
+	}
+
+	/**
+	 * Demo profile definitions used for seeding.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_demo_profiles(): array {
+		return array(
+			array(
+				'client'    => array(
+					'name'        => 'Misty',
+					'slug'        => 'misty',
+					'breed'       => 'Golden Retriever',
+					'weight'      => 63.5,
+					'temperament' => 'Gentle',
+					'notes'       => 'Prefers lavender finishing spray.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Jessie',
+					'last_name'  => 'Chen',
+					'email'      => 'demo+jessie@groomflow.test',
+					'phone'      => '555-0101',
+					'notes'      => 'Text on pickup, works nearby.',
+				),
+				'services'       => array( 'full-groom', 'teeth-polish' ),
+				'flags'          => array( 'vip-client' ),
+				'instructions'   => 'Use hypoallergenic shampoo and low heat dryer.',
+				'public_notes'   => 'Pickup at 3:00pm. Treat waiting at checkout.',
+				'private_notes'  => 'Add groomer notes to CRM after pickup.',
+			),
+			array(
+				'client'    => array(
+					'name'        => 'Baxter',
+					'slug'        => 'baxter',
+					'breed'       => 'Mini Schnauzer',
+					'weight'      => 22.1,
+					'temperament' => 'Alert',
+					'notes'       => 'Clipper guard #1 on body, #2 on legs.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Morgan',
+					'last_name'  => 'Lopez',
+					'email'      => 'demo+morgan@groomflow.test',
+					'phone'      => '555-0102',
+					'notes'      => 'Mention add-on teeth polish upsell.',
+				),
+				'services'      => array( 'full-groom' ),
+				'flags'         => array( 'needs-muzzle' ),
+				'instructions'  => 'Apply calming spray before grooming.',
+				'public_notes'  => 'Guardian will wait in lobby.',
+				'private_notes' => 'Mark grooming notes in Baxter profile after visit.',
+			),
+			array(
+				'client'    => array(
+					'name'        => 'Luna',
+					'slug'        => 'luna',
+					'breed'       => 'Samoyed',
+					'weight'      => 48.7,
+					'temperament' => 'Playful',
+					'notes'       => 'Brush coat thoroughly before bath.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Cam',
+					'last_name'  => 'Patel',
+					'email'      => 'demo+cam@groomflow.test',
+					'phone'      => '555-0103',
+					'notes'      => 'Prefers email updates.',
+				),
+				'services'      => array( 'spa-bath', 'teeth-polish' ),
+				'flags'         => array( 'first-visit' ),
+				'instructions'  => 'Add extra conditioner, schedule follow-up for 6 weeks.',
+				'public_notes'  => 'Guardian returning at 4:15pm.',
+				'private_notes' => '',
+			),
+			array(
+				'client'    => array(
+					'name'        => 'Pepper',
+					'slug'        => 'pepper',
+					'breed'       => 'Australian Shepherd',
+					'weight'      => 41.4,
+					'temperament' => 'High energy',
+					'notes'       => 'Trim paw fur tight for traction.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Drew',
+					'last_name'  => 'Holland',
+					'email'      => 'demo+drew@groomflow.test',
+					'phone'      => '555-0104',
+					'notes'      => 'Has standing Friday appointments.',
+				),
+				'services'      => array( 'full-groom', 'spa-bath' ),
+				'flags'         => array(),
+				'instructions'  => 'Use blueberry facial, towel dry before blowout.',
+				'public_notes'  => 'Add seasonal bandana before pickup.',
+				'private_notes' => '',
+			),
+			array(
+				'client'    => array(
+					'name'        => 'Clover',
+					'slug'        => 'clover',
+					'breed'       => 'Shih Tzu',
+					'weight'      => 14.9,
+					'temperament' => 'Calm',
+					'notes'       => 'Trim face short, leave top knot.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Robin',
+					'last_name'  => 'Nguyen',
+					'email'      => 'demo+robin@groomflow.test',
+					'phone'      => '555-0105',
+					'notes'      => 'Wants photo texted when finished.',
+				),
+				'services'      => array( 'full-groom' ),
+				'flags'         => array( 'vip-client' ),
+				'instructions'  => 'Finish with coat gloss spray.',
+				'public_notes'  => 'Send progress photo when styling starts.',
+				'private_notes' => '',
+			),
+			array(
+				'client'    => array(
+					'name'        => 'Tofu',
+					'slug'        => 'tofu',
+					'breed'       => 'French Bulldog',
+					'weight'      => 26.2,
+					'temperament' => 'Chill',
+					'notes'       => 'Clean facial folds carefully.',
+				),
+				'guardian'  => array(
+					'first_name' => 'Sky',
+					'last_name'  => 'Martinez',
+					'email'      => 'demo+sky@groomflow.test',
+					'phone'      => '555-0106',
+					'notes'      => 'Ask about nail trim add-on.',
+				),
+				'services'      => array( 'spa-bath' ),
+				'flags'         => array(),
+				'instructions'  => 'Keep water lukewarm, dry with towel + cool air.',
+				'public_notes'  => 'Ready for couch cuddles after grooming!',
+				'private_notes' => '',
+			),
+		);
+	}
+}
+// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared

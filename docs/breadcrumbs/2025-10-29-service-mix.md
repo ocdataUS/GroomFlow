@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Finish Sprint 2 reporting by adding `/stats/service-mix` and ensure counts respect date/view filters.
+- **Plan:** 1) Inspect visit/service tables + stage work to design aggregation. 2) Extend the stats controller with the new endpoint, register it, and document parameters. 3) PHPCS, rebuild/install ZIP, and smoke-test via WP-CLI.
+- **Files changed:** plugin/bb-groomflow/includes/api/class-stats-controller.php; docs/API.md; CHANGELOG.md; docs/breadcrumbs/2025-10-29-service-mix.md.
+- **Commands executed:** `qa-phpcs plugin/bb-groomflow`; `qa-phpcbf plugin/bb-groomflow/includes/api/class-stats-controller.php`; `bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow-0.1.0-dev.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow-0.1.0-dev.zip --force --activate`; `docker compose run --rm -T wpcli wp eval 'wp_set_current_user(1); $request = new WP_REST_Request("GET","/bb-groomflow/v1/stats/service-mix"); $response = rest_do_request($request); print_r($response->get_data());'`.
+- **Tests & results:** PHPCS clean (`/opt/qa/artifacts/phpcs-1761754792.txt`). REST smoke test returned the expected empty arrays with range metadata on the seeded DB—ready for richer QA once real visits exist.
+- **Tips & Tricks:** When you need visit/service fixtures fast, seed via WP-CLI using `$wpdb->insert` helpers before calling the endpoint to see non-zero counts.
+- **Remaining work:** Flesh out notification delivery (template rendering + email send) once the trigger tables land, and keep an eye on `/stats/service-mix` once packages are fully wired.

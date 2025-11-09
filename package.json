@@ -1,0 +1,14 @@
+{
+  "name": "groomflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build tooling and assets for the Bubbles & Bows GroomFlow plugin.",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite"
+  },
+  "devDependencies": {
+    "sass": "^1.80.3",
+    "vite": "^5.4.9"
+  }
+}

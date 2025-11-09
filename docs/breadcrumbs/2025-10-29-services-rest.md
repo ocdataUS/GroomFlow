@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Extend Sprint 2 REST coverage by exposing Services CRUD with parity to the admin UI.
+- **Plan:** Review services admin/schema → build a Services REST controller + bootstrap wiring → PHPCS, rebuild/install, then smoke-test GET/POST/PATCH/DELETE flows via WP-CLI and log artifacts/tips.
+- **Files changed:** plugin/bb-groomflow/includes/api/class-services-controller.php; plugin/bb-groomflow/includes/class-plugin.php; docs/API.md.
+- **Commands executed:** `qa-phpcs plugin/bb-groomflow`; `bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow-0.1.0-dev.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow-0.1.0-dev.zip --force --activate`; `docker compose run --rm -T wpcli wp eval '...rest_do_request(\"/bb-groomflow/v1/services\")...'` (GET list + GET single + POST + PATCH + DELETE); repeated `wp eval` snippets to clear QA records and confirm `price` null handling.
+- **Tests & results:** PHPCS clean (`/opt/qa/artifacts/phpcs-1761744891.txt`). REST smoke tests verify pagination/search payloads, creation respects validation (requires name, numeric duration/price), PATCH allows partial updates (including null price), and DELETE returns previous payload while removing package mappings.
+- **Tips & Tricks:** When you need to null out service pricing through REST, send `"price": null`—the controller now explicitly clears the decimal column after the main update, matching the admin “blank price” flow.
+- **Remaining work:** Continue Sprint 2 by adding REST controllers for Packages, Flags, and Views, then start the visit intake/stage move endpoints once directory CRUD is fully covered.
