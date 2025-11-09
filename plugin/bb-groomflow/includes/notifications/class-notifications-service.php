@@ -158,22 +158,22 @@ class Notifications_Service {
 		}
 
 		// phpcs:disable WordPress.WhiteSpace.OperatorSpacing,WordPress.Arrays.MultipleStatementAlignment
-		$trigger = array();
+		$trigger    = array();
 		$trigger_id = isset( $log['trigger_id'] ) ? (int) $log['trigger_id'] : 0;
 		if ( $trigger_id > 0 ) {
-			$trigger      = $this->get_trigger_row( $trigger_id );
+			$trigger = $this->get_trigger_row( $trigger_id );
 		}
 
 		$visit_id = isset( $log['visit_id'] ) ? (int) $log['visit_id'] : 0;
-		$visit = $this->get_visit_payload( $visit_id );
+		$visit    = $this->get_visit_payload( $visit_id );
 
-		$stage = sanitize_key( $log['stage'] ?? '' );
+		$stage    = sanitize_key( $log['stage'] ?? '' );
 		$settings = $this->get_email_settings();
 
-		$tokens = $this->collect_tokens( $visit, $stage, array() );
+		$tokens  = $this->collect_tokens( $visit, $stage, array() );
 		$subject = $this->render_subject( (string) ( $notification['subject'] ?? '' ), $settings, $tokens );
-		$html = $this->render_body_html( (string) ( $notification['body_html'] ?? '' ), $tokens, $notification );
-		$text = $this->render_body_text( (string) ( $notification['body_text'] ?? '' ), $tokens, $notification );
+		$html    = $this->render_body_html( (string) ( $notification['body_html'] ?? '' ), $tokens, $notification );
+		$text    = $this->render_body_text( (string) ( $notification['body_text'] ?? '' ), $tokens, $notification );
 
 		$recipient_list = array();
 
@@ -190,7 +190,7 @@ class Notifications_Service {
 		}
 
 		$this->last_mail_error = null;
-		$sent = $this->send_email( $recipient_list, $subject, $html, $text, $settings, $visit, $trigger );
+		$sent                  = $this->send_email( $recipient_list, $subject, $html, $text, $settings, $visit, $trigger );
 
 		$error_message = '';
 		if ( ! $sent && $this->last_mail_error instanceof WP_Error ) {
@@ -199,9 +199,9 @@ class Notifications_Service {
 
 		// phpcs:enable WordPress.WhiteSpace.OperatorSpacing,WordPress.Arrays.MultipleStatementAlignment
 
-		$log_trigger = $trigger;
+		$log_trigger                    = $trigger;
 		$log_trigger['notification_id'] = $notification_id;
-		$log_trigger['channel'] = $notification['channel'] ?? 'email';
+		$log_trigger['channel']         = $notification['channel'] ?? 'email';
 
 		// phpcs:enable WordPress.WhiteSpace.OperatorSpacing,WordPress.Arrays.MultipleStatementAlignment
 		$this->log_notification_delivery(

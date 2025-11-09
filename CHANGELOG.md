@@ -1,5 +1,6 @@
 # Changelog
 ## [Unreleased]
+- Implement guarded uninstall cleanup that drops all GroomFlow tables, removes every `bbgf_*` option/site option, and exposes `BBGF_PRESERVE_DATA_ON_UNINSTALL` + `bbgf_allow_uninstall_cleanup` for retention scenarios.
 - Refine `/bb-groomflow/v1/board` response with ordered stage metadata, visibility mask flags, and lobby/public data scrubbing.
 - Introduce `wp bbgf` WP-CLI stubs for visits inspection and production snapshot preparation.
 - Add `/stats/daily` and `/stats/stage-averages` REST endpoints for reporting dashboards.
@@ -11,6 +12,10 @@
 - Introduce `bb-groomflow/v1` namespace with `/health` endpoint and document the delivery flow (README + workflow updates).
 - Establish database schema scaffolding with `BBGF_DB_VERSION`, install/upgrade helpers, and seed starter data for services, flags, and the default view.
 - Add WordPress admin UI for behavior flags with CRUD actions, nonce protection, and WP_List_Table rendering.
+- Modularize plugin bootstrap by moving board assets, admin shell, REST routing, and WP-CLI registration into dedicated services with stable wrappers for Elementor + placeholder markup.
+- Teach the board assets service to load translation files, expose `bbgf_board_script_settings`/`bbgf_placeholder_board_data` filters, and refresh the placeholder markup with ARIA labels/timer narration so shortcode, admin, and Elementor previews stay accessible.
+- Harden coding standards across bootstrap/CLI/data/notification services (dbDelta-based upgrade for notification triggers, wp_rand-based demo data, documented visibility helpers) so `qa-phpcs plugin/bb-groomflow` runs clean without blanket ignores.
+- Harden `wp bbgf visits` CLI + demo seed data (prepared statements, per-view logging, UTC-friendly timestamps) and teach `Visit_Service::create_visit()` to honor supplied timer metadata so seeded visits immediately reflect elapsed time and status.
 - Ship Clients & Guardians admin dashboards with create/update/delete flows, guardian linkage, and sortable lists.
 - Standardize all naming and settings on the `client` terminology (no legacy dog schema remains).
 - Expose `/clients` REST endpoints with search/pagination and tighten admin package validation to honor selected services reliably.
@@ -19,4 +24,5 @@
 - Add manual build tooling (`scripts/build_plugin_zip.sh`) and PHPCS ruleset.
 - Provision Docker WordPress stack, production-sync loader script, and workflow documentation for stateless agents.
 - Expand product specification, roadmap, sprint plans, and architecture docs to support feature planning.
+- Documented the stateless slice ritual across README/SPEC/TECH_READINESS/QA_TOOLBELT (build ZIP → Docker install → qa-phpcs + manual admin) and published a WP-CLI happy-path template for headless QA evidence.
 - Document change-management process (AGENTS.md + `docs/CHANGE_MANAGEMENT.md`) so agents can collaborate on pivots safely.

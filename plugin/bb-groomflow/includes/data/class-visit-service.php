@@ -8,6 +8,7 @@
 namespace BBGF\Data;
 
 use BBGF\Plugin;
+use DateTimeInterface;
 use WP_Error;
 use WP_REST_Response;
 use wpdb;
@@ -430,9 +431,18 @@ class Visit_Service {
 	public function create_visit( array $visit, array $services, array $flags ) {
 		$now = $this->plugin->now();
 
-		$visit['created_at']       = $now;
-		$visit['updated_at']       = $now;
-		$visit['timer_started_at'] = $now;
+		$visit['created_at'] = $this->normalize_timestamp_value( $visit['created_at'] ?? null, $now );
+
+		$visit['updated_at'] = $this->normalize_timestamp_value( $visit['updated_at'] ?? null, $visit['created_at'] );
+
+		$timer_fallback = $visit['check_in_at'] ?? $visit['created_at'];
+
+		$visit['timer_started_at'] = $this->normalize_timestamp_value( $visit['timer_started_at'] ?? null, $timer_fallback );
+		if ( isset( $visit['timer_elapsed_seconds'] ) ) {
+			$visit['timer_elapsed_seconds'] = max( 0, (int) $visit['timer_elapsed_seconds'] );
+		} else {
+			$visit['timer_elapsed_seconds'] = 0;
+		}
 
 		$result = $this->wpdb->insert(
 			$this->tables['visits'],
@@ -1175,6 +1185,7 @@ class Visit_Service {
 				'posts_per_page' => -1,
 				'orderby'        => 'date',
 				'order'          => 'ASC',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Attachment lookup constrained to specific visit IDs.
 				'meta_query'     => array(
 					array(
 						'key'     => self::VISIT_PHOTO_META_KEY,
@@ -1239,8 +1250,8 @@ class Visit_Service {
 			$alt = $attachment->post_title ?? '';
 		}
 
-		$sizes = array();
-		$image_sizes = get_intermediate_image_sizes();
+			$sizes       = array();
+			$image_sizes = get_intermediate_image_sizes();
 		foreach ( $image_sizes as $size ) {
 			$details = wp_get_attachment_image_src( $attachment_id, $size );
 			if ( ! $details || empty( $details[0] ) ) {
@@ -1254,7 +1265,11 @@ class Visit_Service {
 			);
 		}
 
-		$uploaded_at = $attachment->post_date_gmt ?: $attachment->post_date;
+		$uploaded_at = (string) ( $attachment->post_date_gmt ?? '' );
+		if ( '' === $uploaded_at ) {
+			$uploaded_at = (string) ( $attachment->post_date ?? '' );
+		}
+
 		$uploaded_at = is_string( $uploaded_at ) && '' !== $uploaded_at ? $uploaded_at : null;
 
 		return array(
@@ -1534,6 +1549,37 @@ class Visit_Service {
 		}
 
 		return gmdate( DATE_RFC3339, $time );
+	}
+
+	/**
+	 * Normalize a timestamp-like input into a MySQL datetime string.
+	 *
+	 * @param mixed  $value    Candidate value (string/int/DateTimeInterface).
+	 * @param string $fallback Fallback timestamp if normalization fails.
+	 * @return string
+	 */
+	private function normalize_timestamp_value( $value, string $fallback ): string {
+		if ( $value instanceof DateTimeInterface ) {
+			return gmdate( 'Y-m-d H:i:s', $value->getTimestamp() );
+		}
+
+		if ( is_int( $value ) ) {
+			return gmdate( 'Y-m-d H:i:s', $value );
+		}
+
+		if ( is_string( $value ) ) {
+			$value = trim( $value );
+			if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value ) ) {
+				return $value;
+			}
+
+			$timestamp = strtotime( $value );
+			if ( false !== $timestamp ) {
+				return gmdate( 'Y-m-d H:i:s', $timestamp );
+			}
+		}
+
+		return $fallback;
 	}
 
 	/**

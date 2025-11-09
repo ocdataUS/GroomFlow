@@ -11,15 +11,14 @@ use BBGF\Plugin;
 use WP_CLI;
 use function WP_CLI\Utils\format_items;
 use function WP_CLI\Utils\get_flag_value;
-use function current_time;
 use function sanitize_email;
 use function sanitize_key;
 use function sanitize_text_field;
 use function sanitize_textarea_field;
 use function sanitize_title;
 use function wp_json_encode;
+use function wp_rand;
 
-// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 /**
  * Provides data discovery helpers for the visits table.
  */
@@ -103,6 +102,7 @@ class Visits_Command extends Base_Command {
 
 		$sql_args[] = $limit;
 
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table names and WHERE clause built from schema map and sanitized inputs.
 		$sql = $this->wpdb->prepare(
 			"SELECT v.id, c.name AS client, v.current_stage AS stage, v.status, v.updated_at
 			FROM {$tables['visits']} AS v
@@ -113,6 +113,7 @@ class Visits_Command extends Base_Command {
 			LIMIT %d",
 			...$sql_args
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 
 		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
@@ -171,19 +172,35 @@ class Visits_Command extends Base_Command {
 		$count = max( 1, min( 12, $count ) );
 
 		if ( $force ) {
-			$this->truncate_visit_tables( $tables );
+			$deleted_rows = $this->truncate_visit_tables( $tables );
+			WP_CLI::log(
+				sprintf(
+					/* translators: %d: number of rows removed */
+					__( 'Removed %d existing visit rows via --force.', 'bb-groomflow' ),
+					$deleted_rows
+				)
+			);
 		} else {
-			$existing = (int) $this->wpdb->get_var( "SELECT COUNT(*) FROM {$tables['visits']}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+			$count_query = $this->wpdb->prepare(
+				"SELECT COUNT(*) FROM {$tables['visits']} WHERE 1 = %d",
+				1
+			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+			$existing = (int) $this->wpdb->get_var( $count_query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
 			if ( $existing > 0 ) {
 				WP_CLI::warning( __( 'Visits already exist. Re-run with --force to replace them.', 'bb-groomflow' ) );
 				return;
 			}
 		}
 
-		$views = $this->wpdb->get_results(
-			"SELECT id, slug, type FROM {$tables['views']} ORDER BY id ASC", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			ARRAY_A
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+		$views_sql = $this->wpdb->prepare(
+			"SELECT id, slug, type FROM {$tables['views']} WHERE 1 = %d ORDER BY id ASC",
+			1
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$views = $this->wpdb->get_results( $views_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
 
 		if ( empty( $views ) ) {
 			WP_CLI::error( __( 'No board views found. Create at least one view before seeding demo data.', 'bb-groomflow' ) );
@@ -196,14 +213,23 @@ class Visits_Command extends Base_Command {
 			WP_CLI::warning( __( 'No services found. Demo visits will be created without service chips.', 'bb-groomflow' ) );
 		}
 
-		$profiles = $this->get_demo_profiles();
+		$profiles      = $this->get_demo_profiles();
 		$visit_service = $this->plugin->visit_service();
 		$now_mysql     = $this->plugin->now();
-		$now_utc       = current_time( 'timestamp', true );
+		$now_utc       = time();
 
 		$created = 0;
 
 		foreach ( $views as $view ) {
+			$view_slug = sanitize_title( (string) ( $view['slug'] ?? '' ) );
+			WP_CLI::log(
+				sprintf(
+					/* translators: 1: visit count 2: view slug */
+					__( 'Creating %1$d demo visit(s) for view "%2$s".', 'bb-groomflow' ),
+					$count,
+					'' !== $view_slug ? $view_slug : (string) ( $view['id'] ?? '?' )
+				)
+			);
 			$stage_keys = $this->get_stage_keys_for_view( (int) $view['id'], $tables );
 			if ( empty( $stage_keys ) ) {
 				WP_CLI::warning(
@@ -217,12 +243,12 @@ class Visits_Command extends Base_Command {
 			}
 
 			for ( $index = 0; $index < $count; $index++ ) {
-				$profile       = $profiles[ $index % count( $profiles ) ];
-				$stage_key     = $stage_keys[ $index % count( $stage_keys ) ];
-				$guardian_id   = $this->get_or_create_guardian( $profile['guardian'], $tables, $now_mysql );
-				$client_id     = $this->get_or_create_client( $profile['client'], $guardian_id, $tables, $now_mysql );
-				$service_ids   = array();
-				$flag_ids      = array();
+				$profile     = $profiles[ $index % count( $profiles ) ];
+				$stage_key   = $stage_keys[ $index % count( $stage_keys ) ];
+				$guardian_id = $this->get_or_create_guardian( $profile['guardian'], $tables, $now_mysql );
+				$client_id   = $this->get_or_create_client( $profile['client'], $guardian_id, $tables, $now_mysql );
+				$service_ids = array();
+				$flag_ids    = array();
 
 				foreach ( $profile['services'] as $service_slug ) {
 					if ( isset( $service_map[ $service_slug ] ) ) {
@@ -236,7 +262,7 @@ class Visits_Command extends Base_Command {
 					}
 				}
 
-				$minutes_ago  = ( $index * 12 ) + rand( 6, 28 );
+				$minutes_ago  = ( $index * 12 ) + wp_rand( 6, 28 );
 				$check_in_ts  = $now_utc - ( $minutes_ago * MINUTE_IN_SECONDS );
 				$check_in_at  = gmdate( 'Y-m-d H:i:s', $check_in_ts );
 				$elapsed_secs = max( 180, (int) ( $now_utc - $check_in_ts ) );
@@ -252,28 +278,40 @@ class Visits_Command extends Base_Command {
 
 				$result = $visit_service->create_visit(
 					array(
-						'client_id'            => $client_id,
-						'guardian_id'          => $guardian_id,
-						'view_id'              => (int) $view['id'],
-						'current_stage'        => $stage_key,
-						'status'               => $status,
-						'check_in_at'          => $check_in_at,
-						'check_out_at'         => null,
-						'assigned_staff'       => 0,
-						'instructions'         => $instructions,
-						'private_notes'        => $private_notes,
-						'public_notes'         => $public_notes,
-						'timer_elapsed_seconds'=> $elapsed_secs,
+						'client_id'             => $client_id,
+						'guardian_id'           => $guardian_id,
+						'view_id'               => (int) $view['id'],
+						'current_stage'         => $stage_key,
+						'status'                => $status,
+						'check_in_at'           => $check_in_at,
+						'check_out_at'          => null,
+						'assigned_staff'        => 0,
+						'instructions'          => $instructions,
+						'private_notes'         => $private_notes,
+						'public_notes'          => $public_notes,
+						'timer_elapsed_seconds' => $elapsed_secs,
+						'timer_started_at'      => $check_in_at,
+						'created_at'            => $check_in_at,
+						'updated_at'            => $now_mysql,
 					),
 					$service_ids,
 					$flag_ids
 				);
 
 				if ( is_wp_error( $result ) ) {
-					WP_CLI::error( $result->get_error_message() );
+					$client_name = sanitize_text_field( $profile['client']['name'] ?? '' );
+					WP_CLI::error(
+						sprintf(
+							/* translators: 1: client name 2: view slug 3: error message */
+							__( 'Failed creating visit for %1$s in view "%2$s": %3$s', 'bb-groomflow' ),
+							'' !== $client_name ? $client_name : __( 'Unnamed client', 'bb-groomflow' ),
+							'' !== $view_slug ? $view_slug : (string) ( $view['id'] ?? '?' ),
+							$result->get_error_message()
+						)
+					);
 				}
 
-				$created++;
+				++$created;
 			}
 		}
 
@@ -291,16 +329,36 @@ class Visits_Command extends Base_Command {
 	 * Remove existing visit data so demo records can be created cleanly.
 	 *
 	 * @param array<string,string> $tables Table map.
-	 * @return void
+	 * @return int Total deleted rows.
 	 */
-	private function truncate_visit_tables( array $tables ): void {
+	private function truncate_visit_tables( array $tables ): int {
+		$total = 0;
+
 		$targets = array( 'visit_services', 'visit_flags', 'stage_history', 'visits' );
 		foreach ( $targets as $key ) {
 			if ( empty( $tables[ $key ] ) ) {
 				continue;
 			}
-			$this->wpdb->query( "DELETE FROM {$tables[$key]}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+			$sql = $this->wpdb->prepare(
+				"DELETE FROM {$tables[ $key ]} WHERE 1 = %d",
+				1
+			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+			$result = $this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
+			if ( false === $result ) {
+				WP_CLI::error(
+					sprintf(
+						/* translators: %s: table name */
+						__( 'Unable to clear table: %s.', 'bb-groomflow' ),
+						$key
+					)
+				);
+			}
+			$total += (int) $result;
 		}
+
+		return $total;
 	}
 
 	/**
@@ -311,10 +369,18 @@ class Visits_Command extends Base_Command {
 	 * @return array<string,array<string,mixed>>
 	 */
 	private function map_by_slug( string $table, string $slug_column ): array {
-		$rows = $this->wpdb->get_results(
-			"SELECT * FROM {$table}", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			ARRAY_A
+		$slug_column = sanitize_key( $slug_column );
+		if ( '' === $slug_column ) {
+			return array();
+		}
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+		$sql = $this->wpdb->prepare(
+			"SELECT * FROM {$table} WHERE 1 = %d",
+			1
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
 
 		if ( empty( $rows ) ) {
 			return array();
@@ -341,16 +407,18 @@ class Visits_Command extends Base_Command {
 	 * @return int Guardian ID.
 	 */
 	private function get_or_create_guardian( array $guardian, array $tables, string $timestamp ): int {
-		$email = sanitize_email( $guardian['email'] ?? '' );
+		$email    = sanitize_email( $guardian['email'] ?? '' );
 		$existing = 0;
 
 		if ( $email ) {
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
 			$existing = (int) $this->wpdb->get_var(
 				$this->wpdb->prepare(
 					"SELECT id FROM {$tables['guardians']} WHERE email = %s LIMIT 1",
 					$email
 				)
 			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 		}
 
 		if ( $existing > 0 ) {
@@ -376,7 +444,24 @@ class Visits_Command extends Base_Command {
 		);
 
 		if ( false === $result ) {
-			WP_CLI::error( __( 'Unable to insert demo guardian.', 'bb-groomflow' ) );
+			$guardian_label = trim(
+				sprintf(
+					'%s %s',
+					sanitize_text_field( $guardian['first_name'] ?? '' ),
+					sanitize_text_field( $guardian['last_name'] ?? '' )
+				)
+			);
+			if ( '' === $guardian_label && '' !== $email ) {
+				$guardian_label = $email;
+			}
+
+			WP_CLI::error(
+				sprintf(
+					/* translators: %s: guardian identifier */
+					__( 'Unable to insert demo guardian "%s".', 'bb-groomflow' ),
+					'' !== $guardian_label ? $guardian_label : __( 'unknown', 'bb-groomflow' )
+				)
+			);
 		}
 
 		return (int) $this->wpdb->insert_id;
@@ -392,31 +477,37 @@ class Visits_Command extends Base_Command {
 	 * @return int Client ID.
 	 */
 	private function get_or_create_client( array $client, int $guardian_id, array $tables, string $timestamp ): int {
-		$slug = sanitize_title( 'demo-' . ( $client['slug'] ?? $client['name'] ?? uniqid( 'client', true ) ) );
+		$slug_seed = (string) ( $client['slug'] ?? $client['name'] ?? '' );
+		if ( '' === $slug_seed ) {
+			$slug_seed = 'client-' . wp_rand( 1000, 9999 );
+		}
+		$slug = sanitize_title( 'demo-' . $slug_seed );
 
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
 		$existing = (int) $this->wpdb->get_var(
 			$this->wpdb->prepare(
 				"SELECT id FROM {$tables['clients']} WHERE slug = %s LIMIT 1",
 				$slug
 			)
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 
 		if ( $existing > 0 ) {
 			return $existing;
 		}
 
 		$data = array(
-			'name'               => sanitize_text_field( $client['name'] ?? '' ),
-			'slug'               => $slug,
-			'guardian_id'        => $guardian_id > 0 ? $guardian_id : 0,
-			'breed'              => sanitize_text_field( $client['breed'] ?? '' ),
-			'weight'             => isset( $client['weight'] ) ? (float) $client['weight'] : null,
-			'sex'                => sanitize_text_field( $client['sex'] ?? '' ),
-			'temperament'        => sanitize_text_field( $client['temperament'] ?? '' ),
-			'notes'              => sanitize_textarea_field( $client['notes'] ?? '' ),
-			'meta'               => wp_json_encode( array( 'source' => 'bbgf-demo' ) ),
-			'created_at'         => $timestamp,
-			'updated_at'         => $timestamp,
+			'name'        => sanitize_text_field( $client['name'] ?? '' ),
+			'slug'        => $slug,
+			'guardian_id' => $guardian_id > 0 ? $guardian_id : 0,
+			'breed'       => sanitize_text_field( $client['breed'] ?? '' ),
+			'weight'      => isset( $client['weight'] ) ? (float) $client['weight'] : null,
+			'sex'         => sanitize_text_field( $client['sex'] ?? '' ),
+			'temperament' => sanitize_text_field( $client['temperament'] ?? '' ),
+			'notes'       => sanitize_textarea_field( $client['notes'] ?? '' ),
+			'meta'        => wp_json_encode( array( 'source' => 'bbgf-demo' ) ),
+			'created_at'  => $timestamp,
+			'updated_at'  => $timestamp,
 		);
 
 		$result = $this->wpdb->insert(
@@ -426,7 +517,14 @@ class Visits_Command extends Base_Command {
 		);
 
 		if ( false === $result ) {
-			WP_CLI::error( __( 'Unable to insert demo client.', 'bb-groomflow' ) );
+			$client_label = sanitize_text_field( $client['name'] ?? '' );
+			WP_CLI::error(
+				sprintf(
+					/* translators: %s: client name */
+					__( 'Unable to insert demo client "%s".', 'bb-groomflow' ),
+					'' !== $client_label ? $client_label : __( 'unknown', 'bb-groomflow' )
+				)
+			);
 		}
 
 		return (int) $this->wpdb->insert_id;
@@ -440,13 +538,13 @@ class Visits_Command extends Base_Command {
 	 * @return array<int,string>
 	 */
 	private function get_stage_keys_for_view( int $view_id, array $tables ): array {
-		$rows = $this->wpdb->get_results(
-			$this->wpdb->prepare(
-				"SELECT stage_key FROM {$tables['view_stages']} WHERE view_id = %d ORDER BY sort_order ASC, id ASC",
-				$view_id
-			),
-			ARRAY_A
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+		$stage_rows_sql = $this->wpdb->prepare(
+			"SELECT stage_key FROM {$tables['view_stages']} WHERE view_id = %d ORDER BY sort_order ASC, id ASC",
+			$view_id
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $this->wpdb->get_results( $stage_rows_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
 
 		if ( ! empty( $rows ) ) {
 			return array_values(
@@ -462,10 +560,13 @@ class Visits_Command extends Base_Command {
 			);
 		}
 
-		$library = $this->wpdb->get_results(
-			"SELECT stage_key FROM {$tables['stages']} ORDER BY sort_order ASC, id ASC", // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			ARRAY_A
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+		$sql = $this->wpdb->prepare(
+			"SELECT stage_key FROM {$tables['stages']} WHERE 1 = %d ORDER BY sort_order ASC, id ASC",
+			1
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$library = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
 
 		if ( empty( $library ) ) {
 			return array();
@@ -492,7 +593,7 @@ class Visits_Command extends Base_Command {
 	private function get_demo_profiles(): array {
 		return array(
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Misty',
 					'slug'        => 'misty',
 					'breed'       => 'Golden Retriever',
@@ -500,21 +601,21 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'Gentle',
 					'notes'       => 'Prefers lavender finishing spray.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Jessie',
 					'last_name'  => 'Chen',
 					'email'      => 'demo+jessie@groomflow.test',
 					'phone'      => '555-0101',
 					'notes'      => 'Text on pickup, works nearby.',
 				),
-				'services'       => array( 'full-groom', 'teeth-polish' ),
-				'flags'          => array( 'vip-client' ),
-				'instructions'   => 'Use hypoallergenic shampoo and low heat dryer.',
-				'public_notes'   => 'Pickup at 3:00pm. Treat waiting at checkout.',
-				'private_notes'  => 'Add groomer notes to CRM after pickup.',
+				'services'      => array( 'full-groom', 'teeth-polish' ),
+				'flags'         => array( 'vip-client' ),
+				'instructions'  => 'Use hypoallergenic shampoo and low heat dryer.',
+				'public_notes'  => 'Pickup at 3:00pm. Treat waiting at checkout.',
+				'private_notes' => 'Add groomer notes to CRM after pickup.',
 			),
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Baxter',
 					'slug'        => 'baxter',
 					'breed'       => 'Mini Schnauzer',
@@ -522,7 +623,7 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'Alert',
 					'notes'       => 'Clipper guard #1 on body, #2 on legs.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Morgan',
 					'last_name'  => 'Lopez',
 					'email'      => 'demo+morgan@groomflow.test',
@@ -536,7 +637,7 @@ class Visits_Command extends Base_Command {
 				'private_notes' => 'Mark grooming notes in Baxter profile after visit.',
 			),
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Luna',
 					'slug'        => 'luna',
 					'breed'       => 'Samoyed',
@@ -544,7 +645,7 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'Playful',
 					'notes'       => 'Brush coat thoroughly before bath.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Cam',
 					'last_name'  => 'Patel',
 					'email'      => 'demo+cam@groomflow.test',
@@ -558,7 +659,7 @@ class Visits_Command extends Base_Command {
 				'private_notes' => '',
 			),
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Pepper',
 					'slug'        => 'pepper',
 					'breed'       => 'Australian Shepherd',
@@ -566,7 +667,7 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'High energy',
 					'notes'       => 'Trim paw fur tight for traction.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Drew',
 					'last_name'  => 'Holland',
 					'email'      => 'demo+drew@groomflow.test',
@@ -580,7 +681,7 @@ class Visits_Command extends Base_Command {
 				'private_notes' => '',
 			),
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Clover',
 					'slug'        => 'clover',
 					'breed'       => 'Shih Tzu',
@@ -588,7 +689,7 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'Calm',
 					'notes'       => 'Trim face short, leave top knot.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Robin',
 					'last_name'  => 'Nguyen',
 					'email'      => 'demo+robin@groomflow.test',
@@ -602,7 +703,7 @@ class Visits_Command extends Base_Command {
 				'private_notes' => '',
 			),
 			array(
-				'client'    => array(
+				'client'        => array(
 					'name'        => 'Tofu',
 					'slug'        => 'tofu',
 					'breed'       => 'French Bulldog',
@@ -610,7 +711,7 @@ class Visits_Command extends Base_Command {
 					'temperament' => 'Chill',
 					'notes'       => 'Clean facial folds carefully.',
 				),
-				'guardian'  => array(
+				'guardian'      => array(
 					'first_name' => 'Sky',
 					'last_name'  => 'Martinez',
 					'email'      => 'demo+sky@groomflow.test',
@@ -626,4 +727,3 @@ class Visits_Command extends Base_Command {
 		);
 	}
 }
-// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
