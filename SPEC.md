@@ -64,6 +64,13 @@
 - Manual packaging only (`bash scripts/build_plugin_zip.sh`); QA always installs the ZIP in Docker.
 - No binding the plugin directory into Docker volumes—use copy operations to keep QA fast.
 
+### Operational Guardrails
+- **Slice ritual:** Every slice must follow `AGENTS.md` — branch from `dev`, log the slice, build the ZIP, install it inside Docker, reseed demo data if needed, run `qa-phpcs plugin/bb-groomflow`, and perform the full admin happy-path (Clients, Guardians, Services, Packages, Flags, Views, Settings). Artifact paths from those runs live under `/opt/qa/artifacts/` and must be recorded in `docs/REFACTOR_LOG.md` + `qa/QA_LOG.md`.
+- **Bootstrap services:** The plugin bootstrap is now modular (`BBGF\Bootstrap\Assets_Service`, `Admin_Menu_Service`, `Rest_Service`, `Cli_Service`). Public helpers such as `bbgf()->bootstrap_elementor()` and `bbgf()->get_placeholder_board_markup()` proxy to those services—wrappers stay stable even as internals change.
+- **CLI + seed data:** `wp bbgf visits seed-demo --count=<n> [--force]` seeds realistic demo visits using prepared statements and explicit timestamps so QA boards immediately show elapsed timers. Future CLI helpers must follow the same sanitization and logging patterns introduced in `includes/cli/class-visits-command.php`.
+- **Uninstall safeguards:** `uninstall.php` drops every GroomFlow table and `bbgf_*` option/site option unless `BBGF_PRESERVE_DATA_ON_UNINSTALL` is set or `bbgf_allow_uninstall_cleanup` returns false. Document the intended behavior before running uninstall QA to avoid accidental data loss.
+- **No live mounts:** Zip→copy→install is the only supported deployment path. Mounting the plugin directory into Docker bypasses activation hooks and invalidates QA.
+
 ---
 
 ## Roles & Capabilities

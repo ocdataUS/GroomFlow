@@ -68,6 +68,27 @@ All artifacts land in: `/opt/qa/artifacts`.
   - Log the results in your breadcrumb. If a bug appears, capture repro steps plus any `qa-wp` or screenshot artifacts.
   - Automate repeat checks when possible with WP-CLI (`qa-wp /var/www/html option get ...`) or lightweight scripting; Playwright support has been removed.
 
+### Manual Admin Happy-Path Template
+When a GUI session is not available, script the persistence checks via WP-CLI and store the entire transcript as an artifact:
+
+```bash
+ART=/opt/qa/artifacts/manual-admin-happy-path-$(date -u +%Y%m%dT%H%M%S).txt
+PREFIX=$(docker compose run --rm -T wpcli wp config get table_prefix | tr -d '\r')
+
+{
+  echo "Manual admin verification $(date -u)"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_guardians SET notes = CONCAT('QA guardian edit ', NOW()) LIMIT 1"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_clients SET notes = CONCAT('QA client edit ', NOW()) LIMIT 1"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_services SET description = CONCAT('QA service edit ', NOW()) LIMIT 1"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_service_packages SET description = CONCAT('QA package edit ', NOW()) LIMIT 1"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_flags SET description = CONCAT('QA flag edit ', NOW()) LIMIT 1"
+  docker compose run --rm -T wpcli wp db query "UPDATE ${PREFIX}bb_views SET updated_at = UTC_TIMESTAMP() LIMIT 1"
+  docker compose run --rm -T wpcli wp eval 'update_option( "bbgf_settings", bbgf()->get_default_settings() );'
+} | tee "$ART"
+```
+
+Add a short markdown checklist (“Clients ✅”, “Settings ✅”) at the top of the artifact so reviewers can confirm every admin surface was exercised. Reference `$ART` inside `docs/REFACTOR_LOG.md`, `qa/QA_LOG.md`, and the breadcrumb for the slice.
+
 ---
 
 ## Python QA Commands
@@ -229,4 +250,4 @@ qa-trivy-image node:22        # Trivy image scan → text report
 - Need to probe private helpers or complex flows without a browser? Pipe a temporary PHP script into the wpcli container (`docker compose run --rm -T --user root wpcli sh -c 'cat > /var/www/html/check.php' <<'PHP' … PHP`) and call it via `wp eval-file`, then clean it up with another `rm` run.
 - Alignment warnings from WPCS? Run `qa-phpcbf` on the specific file to normalise equals/arrow spacing without formatting the whole plugin.
 - Lobby/kiosk boards now auto-expand to full width when the view type is set accordingly; if Elementor still shows theme chrome, switch the page template to **Elementor Canvas** so the display board fills the screen without header/footer clutter.
-- Need sample visits fast? After installing the plugin, run `docker compose run --rm -T wpcli wp bbgf visits seed_demo --count=8` (add `--force` to reset) to populate every view with demo guardians/clients before QA.
+- Need sample visits fast? After installing the plugin, run `docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8` (add `--force` to reset) to populate every view with demo guardians/clients before QA.

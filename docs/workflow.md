@@ -60,10 +60,10 @@ Need demo data back on the board? Use the bundled seed command once Docker WP is
 
 ```bash
 cd docker
-docker compose run --rm -T wpcli wp bbgf visits seed_demo --count=8
+docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8
 ```
 
-Pass `--force` to clear existing visits before seeding. The command creates sample clients, guardians, and visits across every configured view so the lobby/interactive boards stay populated.
+`--count` controls how many demo visits each view receives (min 1, max 12). Pass `--force` to clear `visits`, `visit_services`, `visit_flags`, and `stage_history` before reseeding—the CLI now logs how many rows it removed so you know the reset worked. The command creates sample clients, guardians, and visits across every configured view so the lobby/interactive boards stay populated with realistic timestamps.
 
 ## 4. QA / QC Flow
 
