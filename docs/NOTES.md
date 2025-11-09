@@ -11,6 +11,7 @@
 - `BBGF\Data\Visit_Service::create_visit()` will honor `created_at`, `updated_at`, and `timer_started_at` values passed in (falling back to `now()` if missing); use this when importing historical visits so timers stay accurate.
 - Need to log the manual admin happy-path without a browser? Grab the table prefix via `docker compose run --rm -T wpcli wp config get table_prefix`, run the WP-CLI update queries listed in `TECH_READINESS.md` / `QA_TOOLBELT.md`, and pipe the transcript to `/opt/qa/artifacts/manual-admin-happy-path-<timestamp>.txt` so auditors can confirm each form’s persistence.
 - Board previews now localize strings + ARIA labels through `bbgf_board_script_settings` (JS payload) and `bbgf_placeholder_board_data` (placeholder dataset) filters; hook these to swap default timers, placeholder cards, or localization before Elementor/shortcode rendering.
+- When the board loads in admin/shortcode/Elementor, the PHP renderer now uses the live payload from `Visit_Service::build_board_payload()`, so capacity hints and cards match the REST API before JavaScript hydration. Fall back to the filters above if you truly need the old mock data.
 
 ## Known Gaps / Watch-outs
 - PHPCS currently flags custom capabilities and schema changes; S1 slice will address this. Until then, expect warnings on `class-plugin.php` and `class-visits-command.php`.

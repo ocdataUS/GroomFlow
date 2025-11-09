@@ -118,9 +118,13 @@ class Assets_Service {
 	/**
 	 * Enqueue board assets for the shortcode or admin dashboard.
 	 *
-	 * @param array<string,mixed> $context Rendering context (view slug, public token, etc).
+	 * @param array<string,mixed> $context           Rendering context (view slug, public token, etc).
+	 * @param array<string,mixed> $prebuilt_settings Optional precomputed settings to localize.
+	 * @return array<string,mixed> Localized board settings.
 	 */
-	public function enqueue_board_assets( array $context = array() ): void {
+	public function enqueue_board_assets( array $context = array(), ?array $prebuilt_settings = null ): array {
+		$board_settings = $prebuilt_settings ?? $this->get_board_bootstrap_settings( $context );
+
 		if (
 			! $this->elementor_config_stub_added
 			&& (
@@ -141,13 +145,15 @@ class Assets_Service {
 		}
 
 		if ( wp_script_is( self::BOARD_ASSET_HANDLE, 'registered' ) ) {
-			wp_localize_script( self::BOARD_ASSET_HANDLE, 'bbgfBoardSettings', $this->get_board_bootstrap_settings( $context ) );
+			wp_localize_script( self::BOARD_ASSET_HANDLE, 'bbgfBoardSettings', $board_settings );
 			wp_enqueue_script( self::BOARD_ASSET_HANDLE );
 		}
 
 		if ( wp_style_is( self::BOARD_ASSET_HANDLE, 'registered' ) ) {
 			wp_enqueue_style( self::BOARD_ASSET_HANDLE );
 		}
+
+		return $board_settings;
 	}
 
 	/**
@@ -315,7 +321,7 @@ class Assets_Service {
 			$presentation['view_switcher'] = 'dropdown';
 		}
 
-		$this->enqueue_board_assets(
+		$board_settings = $this->enqueue_board_assets(
 			array(
 				'view'         => $view_slug,
 				'public_token' => $public_token,
@@ -328,7 +334,8 @@ class Assets_Service {
 				'active_view'  => $view_slug,
 				'public_token' => $public_token,
 				'presentation' => $presentation,
-			)
+			),
+			$board_settings
 		);
 	}
 
@@ -690,13 +697,14 @@ class Assets_Service {
 	}
 
 	/**
-	 * Build placeholder board markup shared by the shortcode, admin preview, and Elementor widget.
+	 * Build board markup shared by the shortcode, admin preview, and Elementor widget.
 	 *
-	 * @param array<string,mixed> $args Additional display arguments.
+	 * @param array<string,mixed> $args      Additional display arguments.
+	 * @param array<string,mixed> $settings  Optional precomputed board settings.
 	 * @return string
 	 */
-	public function get_placeholder_board_markup( array $args = array() ): string {
-		$args            = wp_parse_args(
+	public function get_placeholder_board_markup( array $args = array(), ?array $settings = null ): string {
+		$args         = wp_parse_args(
 			$args,
 			array(
 				'view'         => 'day',
@@ -704,21 +712,38 @@ class Assets_Service {
 				'public_token' => '',
 			)
 		);
-		$view_key        = (string) $args['view'];
-		$data            = $this->get_placeholder_board_data( $view_key );
+		$view_key     = (string) $args['view'];
+		$active_view  = sanitize_key( (string) $args['active_view'] );
+		$public_token = sanitize_text_field( (string) $args['public_token'] );
+
+		if ( null === $settings ) {
+			$settings = $this->get_board_bootstrap_settings(
+				array(
+					'view'         => $view_key,
+					'public_token' => $public_token,
+					'presentation' => isset( $args['presentation'] ) && is_array( $args['presentation'] ) ? $args['presentation'] : array(),
+				)
+			);
+		}
+
+		$data = null;
+		if ( isset( $settings['initialBoard'] ) && is_array( $settings['initialBoard'] ) ) {
+			$data = $this->convert_board_payload_to_preview_data( $settings['initialBoard'], $settings );
+		}
+
+		if ( ! $data ) {
+			$data = $this->get_placeholder_board_data( $view_key );
+		} elseif ( isset( $data['active_view'] ) && '' !== $data['active_view'] ) {
+			$active_view = sanitize_key( (string) $data['active_view'] );
+			if ( '' !== $active_view ) {
+				$view_key = $active_view;
+			}
+		}
+
 		$columns         = $data['columns'];
-		$active_view     = sanitize_key( (string) $args['active_view'] );
-		$public_token    = sanitize_text_field( (string) $args['public_token'] );
-		$boot_settings   = $this->get_board_bootstrap_settings(
-			array(
-				'view'         => $view_key,
-				'public_token' => $public_token,
-				'presentation' => isset( $args['presentation'] ) && is_array( $args['presentation'] ) ? $args['presentation'] : array(),
-			)
-		);
-		$boot_view       = isset( $boot_settings['view'] ) && is_array( $boot_settings['view'] ) ? $boot_settings['view'] : array();
-		$boot_visibility = isset( $boot_settings['visibility'] ) && is_array( $boot_settings['visibility'] ) ? $boot_settings['visibility'] : array();
-		$boot_board      = isset( $boot_settings['initialBoard'] ) && is_array( $boot_settings['initialBoard'] ) ? $boot_settings['initialBoard'] : array();
+		$boot_view       = isset( $settings['view'] ) && is_array( $settings['view'] ) ? $settings['view'] : array();
+		$boot_visibility = isset( $settings['visibility'] ) && is_array( $settings['visibility'] ) ? $settings['visibility'] : array();
+		$boot_board      = isset( $settings['initialBoard'] ) && is_array( $settings['initialBoard'] ) ? $settings['initialBoard'] : array();
 
 		$view_type = sanitize_key(
 			(string) (
@@ -736,8 +761,8 @@ class Assets_Service {
 		$is_public = ! empty( $boot_board['is_public'] ) || ! empty( $data['is_public'] );
 
 		$presentation_mode = '';
-		if ( isset( $boot_settings['presentation']['mode'] ) ) {
-			$presentation_mode = sanitize_key( (string) $boot_settings['presentation']['mode'] );
+		if ( isset( $settings['presentation']['mode'] ) ) {
+			$presentation_mode = sanitize_key( (string) $settings['presentation']['mode'] );
 		}
 
 		if ( '' === $presentation_mode ) {
@@ -746,7 +771,7 @@ class Assets_Service {
 				: 'interactive';
 		}
 
-		$board_mode = $presentation_mode;
+		$board_mode = $data['board_mode'] ?? $presentation_mode;
 
 		$active_view_label = '';
 		if ( isset( $boot_view['name'] ) && '' !== (string) $boot_view['name'] ) {
@@ -1355,5 +1380,356 @@ class Assets_Service {
 		 * @param string              $active_view Requested view key.
 		 */
 		return apply_filters( 'bbgf_placeholder_board_data', $data, $active_view );
+	}
+
+	/**
+	 * Convert a live board payload into the preview structure consumed by the PHP markup renderer.
+	 *
+	 * @param array<string,mixed> $board     Board payload from Visit_Service::build_board_payload().
+	 * @param array<string,mixed> $settings  Localized settings array.
+	 * @return array<string,mixed>
+	 */
+	private function convert_board_payload_to_preview_data( array $board, array $settings ): array {
+		$active_slug     = sanitize_key( (string) ( $board['view']['slug'] ?? $settings['view']['slug'] ?? '' ) );
+		$available_views = isset( $settings['views'] ) && is_array( $settings['views'] ) ? $settings['views'] : array();
+		$views           = array();
+
+		foreach ( $available_views as $view_option ) {
+			$slug = sanitize_key( (string) ( $view_option['slug'] ?? $view_option['key'] ?? '' ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$views[] = array(
+				'key'    => $slug,
+				'label'  => (string) ( $view_option['name'] ?? $view_option['label'] ?? $slug ),
+				'active' => $slug === $active_slug,
+			);
+		}
+
+		if ( '' === $active_slug && ! empty( $views ) ) {
+			$views[0]['active'] = true;
+		}
+
+		if ( empty( $views ) && '' !== $active_slug ) {
+			$views[] = array(
+				'key'    => $active_slug,
+				'label'  => (string) ( $board['view']['name'] ?? $active_slug ),
+				'active' => true,
+			);
+		}
+
+		$stages  = isset( $board['stages'] ) && is_array( $board['stages'] ) ? $board['stages'] : array();
+		$columns = array();
+
+		foreach ( $stages as $index => $stage ) {
+			$previous  = $stages[ $index - 1 ] ?? null;
+			$next      = $stages[ $index + 1 ] ?? null;
+			$columns[] = $this->convert_stage_to_column_data( $stage, $previous, $next );
+		}
+
+		$view_type  = sanitize_key( (string) ( $board['view']['type'] ?? $settings['view']['type'] ?? 'internal' ) );
+		$readonly   = ! empty( $board['readonly'] );
+		$is_public  = ! empty( $board['is_public'] );
+		$board_mode = ( $readonly || $is_public || in_array( $view_type, array( 'lobby', 'kiosk' ), true ) )
+			? 'display'
+			: 'interactive';
+
+		return array(
+			'views'        => $views,
+			'columns'      => $columns,
+			'last_updated' => $this->humanize_last_updated_text( $board['last_updated'] ?? '' ),
+			'readonly'     => $readonly,
+			'is_public'    => $is_public,
+			'view_type'    => $view_type,
+			'board_mode'   => $board_mode,
+			'active_view'  => $active_slug,
+		);
+	}
+
+	/**
+	 * Convert a stage payload into the simplified column data structure used by the preview markup.
+	 *
+	 * @param array<string,mixed>      $stage          Stage payload.
+	 * @param array<string,mixed>|null $previous_stage Previous stage payload.
+	 * @param array<string,mixed>|null $next_stage     Next stage payload.
+	 * @return array<string,mixed>
+	 */
+	private function convert_stage_to_column_data( array $stage, ?array $previous_stage, ?array $next_stage ): array {
+		$stage_key = sanitize_key( (string) ( $stage['stage_key'] ?? $stage['key'] ?? uniqid( 'stage_', false ) ) );
+		$label     = (string) ( $stage['label'] ?? $stage_key );
+		$soft      = (int) ( $stage['capacity_soft_limit'] ?? 0 );
+		$hard      = (int) ( $stage['capacity_hard_limit'] ?? 0 );
+
+		$cards  = array();
+		$visits = isset( $stage['visits'] ) && is_array( $stage['visits'] ) ? $stage['visits'] : array();
+
+		foreach ( $visits as $visit ) {
+			$cards[] = $this->convert_visit_to_card_data( $visit, $stage, $previous_stage, $next_stage );
+		}
+
+		$count          = count( $cards );
+		$available_soft = $soft > 0 ? max( 0, $soft - $count ) : null;
+		$available_hard = $hard > 0 ? max( 0, $hard - $count ) : null;
+		$is_soft_full   = $soft > 0 && $count > $soft;
+		$is_hard_full   = $hard > 0 && $count > $hard;
+
+		$state_class = '';
+		if ( $is_hard_full ) {
+			$state_class = 'bbgf-column--hard-full';
+		} elseif ( $is_soft_full ) {
+			$state_class = 'bbgf-column--soft-full';
+		} elseif ( $soft > 0 && ( null !== $available_soft && $available_soft <= 1 ) ) {
+			$state_class = 'bbgf-column--near-capacity';
+		}
+
+		return array(
+			'key'              => $stage_key,
+			'label'            => $label,
+			'soft_capacity'    => $soft,
+			'hard_capacity'    => $hard,
+			'capacity_label'   => (string) ( $stage['description'] ?? '' ),
+			'cards'            => $cards,
+			'visit_count'      => $count,
+			'available_soft'   => $available_soft,
+			'available_hard'   => $available_hard,
+			'is_soft_exceeded' => $is_soft_full,
+			'is_hard_exceeded' => $is_hard_full,
+			'state_class'      => $state_class,
+			'capacity_hint'    => $this->generate_capacity_hint( $soft, $hard, $count, $available_soft ),
+		);
+	}
+
+	/**
+	 * Convert a visit payload into the simplified card dataset used by the preview markup.
+	 *
+	 * @param array<string,mixed>      $visit          Visit payload.
+	 * @param array<string,mixed>      $stage          Current stage definition.
+	 * @param array<string,mixed>|null $previous_stage Previous stage definition.
+	 * @param array<string,mixed>|null $next_stage     Next stage definition.
+	 * @return array<string,mixed>
+	 */
+	private function convert_visit_to_card_data( array $visit, array $stage, ?array $previous_stage, ?array $next_stage ): array {
+		$client_name = (string) ( $visit['client']['name'] ?? __( 'Client', 'bb-groomflow' ) );
+
+		$services      = array();
+		$service_names = array();
+		foreach ( isset( $visit['services'] ) && is_array( $visit['services'] ) ? $visit['services'] : array() as $service ) {
+			$label = (string) ( $service['name'] ?? '' );
+			$icon  = (string) ( $service['icon'] ?? '' );
+			if ( '' !== $label || '' !== $icon ) {
+				$services[] = array(
+					'label' => $label,
+					'icon'  => $icon,
+				);
+			}
+
+			if ( '' !== $label ) {
+				$service_names[] = $label;
+			}
+		}
+
+		$flags = array();
+		foreach ( isset( $visit['flags'] ) && is_array( $visit['flags'] ) ? $visit['flags'] : array() as $flag ) {
+			$flags[] = array(
+				'label' => (string) ( $flag['name'] ?? '' ),
+				'emoji' => (string) ( $flag['emoji'] ?? '' ),
+			);
+		}
+
+		$notes = (string) ( $visit['public_notes'] ?? $visit['instructions'] ?? '' );
+
+		$seconds     = isset( $visit['timer_elapsed_seconds'] ) ? max( 0, (int) $visit['timer_elapsed_seconds'] ) : 0;
+		$timer_state = $this->determine_timer_state(
+			$seconds,
+			array(
+				'yellow' => (int) ( $stage['timer_threshold_yellow'] ?? 0 ),
+				'red'    => (int) ( $stage['timer_threshold_red'] ?? 0 ),
+			)
+		);
+		$timer_value = $this->format_timer_value( $seconds );
+		$timer       = $this->make_placeholder_timer( $timer_value, $seconds, $timer_state );
+
+		$modifiers = array();
+		if ( 'critical' === $timer_state ) {
+			$modifiers[] = 'bbgf-card--overdue';
+		} elseif ( 'warning' === $timer_state ) {
+			$modifiers[] = 'bbgf-card--capacity-warning';
+		}
+
+		if ( ! empty( $flags ) ) {
+			$modifiers[] = 'bbgf-card--flagged';
+		}
+
+		return array(
+			'id'              => (int) ( $visit['id'] ?? 0 ),
+			'name'            => $client_name,
+			'avatar'          => $this->build_avatar_placeholder( $visit ),
+			'arrival'         => $this->format_arrival_label( $visit['check_in_at'] ?? '' ),
+			'service_summary' => implode( ' • ', $service_names ),
+			'services'        => $services,
+			'flags'           => $flags,
+			'notes'           => $notes,
+			'timer'           => $timer,
+			'previous_label'  => (string) ( $previous_stage['label'] ?? '' ),
+			'next_label'      => (string) ( $next_stage['label'] ?? '' ),
+			'modifiers'       => implode( ' ', array_filter( $modifiers ) ),
+			'updated_at'      => (string) ( $visit['updated_at'] ?? '' ),
+		);
+	}
+
+	/**
+	 * Generate a capacity hint string for column headers.
+	 *
+	 * @param int      $soft_capacity Soft limit.
+	 * @param int      $hard_capacity Hard limit.
+	 * @param int      $count         Current visit count.
+	 * @param int|null $available     Remaining soft slots.
+	 * @return string
+	 */
+	private function generate_capacity_hint( int $soft_capacity, int $hard_capacity, int $count, ?int $available ): string {
+		if ( $hard_capacity > 0 && $count > $hard_capacity ) {
+			return __( 'Hard limit exceeded', 'bb-groomflow' );
+		}
+
+		if ( $soft_capacity > 0 && $count > $soft_capacity ) {
+			return __( 'At capacity', 'bb-groomflow' );
+		}
+
+		if ( $soft_capacity > 0 ) {
+			$available = null === $available ? max( 0, $soft_capacity - $count ) : $available;
+
+			if ( $available > 1 ) {
+				return sprintf(
+					/* translators: %s: number of open slots. */
+					__( '%s slots open', 'bb-groomflow' ),
+					number_format_i18n( $available )
+				);
+			}
+
+			if ( 1 === $available ) {
+				return __( '1 slot open', 'bb-groomflow' );
+			}
+
+			return __( 'Fully booked', 'bb-groomflow' );
+		}
+
+		return __( 'Flexible capacity', 'bb-groomflow' );
+	}
+
+	/**
+	 * Determine a timer state based on elapsed seconds and thresholds.
+	 *
+	 * @param int               $seconds    Elapsed seconds.
+	 * @param array<string,int> $thresholds Stage thresholds.
+	 * @return string
+	 */
+	private function determine_timer_state( int $seconds, array $thresholds ): string {
+		$yellow = isset( $thresholds['yellow'] ) ? (int) $thresholds['yellow'] : 0;
+		$red    = isset( $thresholds['red'] ) ? (int) $thresholds['red'] : 0;
+
+		if ( $red > 0 && $seconds >= $red ) {
+			return 'critical';
+		}
+
+		if ( $yellow > 0 && $seconds >= $yellow ) {
+			return 'warning';
+		}
+
+		return 'on-track';
+	}
+
+	/**
+	 * Format elapsed seconds into a compact timer label.
+	 *
+	 * @param int $seconds Elapsed seconds.
+	 * @return string
+	 */
+	private function format_timer_value( int $seconds ): string {
+		if ( $seconds >= HOUR_IN_SECONDS ) {
+			$hours   = floor( $seconds / HOUR_IN_SECONDS );
+			$minutes = floor( ( $seconds % HOUR_IN_SECONDS ) / MINUTE_IN_SECONDS );
+
+			return sprintf( '%dh %02dm', $hours, $minutes );
+		}
+
+		if ( $seconds >= MINUTE_IN_SECONDS ) {
+			$minutes = floor( $seconds / MINUTE_IN_SECONDS );
+			return sprintf( '%dm', $minutes );
+		}
+
+		return sprintf( '%ds', $seconds );
+	}
+
+	/**
+	 * Provide a human-friendly "last updated" string for the toolbar badge.
+	 *
+	 * @param string $timestamp ISO8601 timestamp.
+	 * @return string
+	 */
+	private function humanize_last_updated_text( string $timestamp ): string {
+		if ( '' === $timestamp ) {
+			return __( 'just now', 'bb-groomflow' );
+		}
+
+		$time = strtotime( $timestamp );
+		if ( false === $time ) {
+			return __( 'just now', 'bb-groomflow' );
+		}
+
+		$diff = human_time_diff( $time, time() );
+		if ( '' === $diff ) {
+			return __( 'just now', 'bb-groomflow' );
+		}
+
+		return sprintf(
+			/* translators: %s: relative time (e.g., "5 mins"). */
+			__( '%s ago', 'bb-groomflow' ),
+			$diff
+		);
+	}
+
+	/**
+	 * Format the arrival label for a visit card.
+	 *
+	 * @param string $timestamp ISO8601 timestamp.
+	 * @return string
+	 */
+	private function format_arrival_label( string $timestamp ): string {
+		if ( '' === $timestamp ) {
+			return '';
+		}
+
+		$time = strtotime( $timestamp );
+		if ( false === $time ) {
+			return '';
+		}
+
+		$formatted = wp_date( get_option( 'time_format', 'g:i a' ), $time );
+		if ( '' === $formatted ) {
+			return '';
+		}
+
+		/* translators: %s: localized time string. */
+		return sprintf( __( 'Arrived %s', 'bb-groomflow' ), $formatted );
+	}
+
+	/**
+	 * Build an avatar placeholder (initial) for a visit when no photo is available.
+	 *
+	 * @param array<string,mixed> $visit Visit payload.
+	 * @return string
+	 */
+	private function build_avatar_placeholder( array $visit ): string {
+		$name = (string) ( $visit['client']['name'] ?? '' );
+		if ( '' === $name ) {
+			return '🐾';
+		}
+
+		if ( function_exists( 'mb_substr' ) ) {
+			return strtoupper( mb_substr( $name, 0, 1 ) );
+		}
+
+		return strtoupper( substr( $name, 0, 1 ) );
 	}
 }

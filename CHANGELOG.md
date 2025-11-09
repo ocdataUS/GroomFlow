@@ -14,6 +14,7 @@
 - Add WordPress admin UI for behavior flags with CRUD actions, nonce protection, and WP_List_Table rendering.
 - Modularize plugin bootstrap by moving board assets, admin shell, REST routing, and WP-CLI registration into dedicated services with stable wrappers for Elementor + placeholder markup.
 - Teach the board assets service to load translation files, expose `bbgf_board_script_settings`/`bbgf_placeholder_board_data` filters, and refresh the placeholder markup with ARIA labels/timer narration so shortcode, admin, and Elementor previews stay accessible.
+- Replace the placeholder board shell with a live renderer that uses the localized REST payload for shortcode, admin, and Elementor surfaces (capacity hints, timers, and cards match the database before JavaScript hydration).
 - Harden coding standards across bootstrap/CLI/data/notification services (dbDelta-based upgrade for notification triggers, wp_rand-based demo data, documented visibility helpers) so `qa-phpcs plugin/bb-groomflow` runs clean without blanket ignores.
 - Harden `wp bbgf visits` CLI + demo seed data (prepared statements, per-view logging, UTC-friendly timestamps) and teach `Visit_Service::create_visit()` to honor supplied timer metadata so seeded visits immediately reflect elapsed time and status.
 - Ship Clients & Guardians admin dashboards with create/update/delete flows, guardian linkage, and sortable lists.

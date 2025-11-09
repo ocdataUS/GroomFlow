@@ -2,6 +2,8 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2025-11-09 | maint | S7 · Board Polling & REST Wiring | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1762671186.txt` | PASS |
+| 2025-11-09 | maint | S7 · Board Polling & REST Wiring | `wp eval … build_board_payload` | `/opt/qa/artifacts/board-payload-20251109T005409.json` | PASS |
 | 2025-11-09 | maint | Baseline cleanup & S7 planning | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1762669738.txt` | PASS |
 | 2025-11-09 | codex | S6 · Board Localization & Placeholder Accessibility | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1762668016.txt` | PASS |
 | 2025-11-09 | codex | S6 · Board Localization & Placeholder Accessibility | Manual admin happy-path (WP-CLI updates for Clients→Settings) | `/opt/qa/artifacts/manual-admin-happy-path-20251109T060122-s6.txt` | PASS |

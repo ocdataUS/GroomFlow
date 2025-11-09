@@ -85,7 +85,7 @@ class Admin_Menu_Service {
 		$default_view = $this->plugin->visit_service()->get_default_view();
 		$active_view  = is_array( $default_view ) ? sanitize_key( (string) ( $default_view['slug'] ?? '' ) ) : '';
 
-		$this->assets->enqueue_board_assets(
+		$board_settings = $this->assets->enqueue_board_assets(
 			array(
 				'view' => $active_view,
 			)
@@ -94,7 +94,7 @@ class Admin_Menu_Service {
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'Bubbles & Bows GroomFlow', 'bb-groomflow' ) . '</h1>';
 		echo '<p class="description">' . esc_html__( 'Preview the calming GroomFlow Kanban experience. Upcoming sprints wire this shell into live data, drag-and-drop, and notifications.', 'bb-groomflow' ) . '</p>';
-		echo $this->assets->get_placeholder_board_markup( array( 'active_view' => $active_view ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup escaped within the renderer.
+		echo $this->assets->get_placeholder_board_markup( array( 'active_view' => $active_view ), $board_settings ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup escaped within the renderer.
 		echo '</div>';
 	}
 
