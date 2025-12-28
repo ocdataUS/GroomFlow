@@ -266,8 +266,8 @@ class Visit_Service {
 			FROM {$this->tables['visits']} AS v
 			LEFT JOIN {$this->tables['clients']} AS c ON c.id = v.client_id
 			LEFT JOIN {$this->tables['guardians']} AS g ON g.id = v.guardian_id
-			WHERE v.view_id = %d{$modified_clause}";
-		$args_sql = array_merge( array( $view_id ), $modified_args );
+			WHERE v.view_id = %d AND v.check_out_at IS NULL AND (v.status IS NULL OR v.status <> %s){$modified_clause}";
+		$args_sql = array_merge( array( $view_id, 'completed' ), $modified_args );
 
 		if ( ! empty( $stage_filter_list ) ) {
 			$placeholders = implode( ',', array_fill( 0, count( $stage_filter_list ), '%s' ) );
@@ -915,6 +915,103 @@ class Visit_Service {
 	}
 
 	/**
+	 * Mark a visit as checked out and close the lifecycle.
+	 *
+	 * @param int    $visit_id Visit ID.
+	 * @param int    $user_id  Acting user ID.
+	 * @param string $comment  Optional checkout comment.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function checkout_visit( int $visit_id, int $user_id, string $comment = '' ) {
+		$visit_row = $this->get_visit_row( $visit_id );
+		if ( null === $visit_row ) {
+			return new WP_Error(
+				'bbgf_visit_not_found',
+				__( 'Visit not found.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		if ( ! empty( $visit_row['check_out_at'] ) ) {
+			return new WP_Error(
+				'bbgf_visit_already_checked_out',
+				__( 'This visit has already been checked out.', 'bb-groomflow' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$stage_key        = sanitize_key( (string) ( $visit_row['current_stage'] ?? '' ) );
+		$history_totals   = $this->get_stage_elapsed_totals( array( $visit_id ) );
+		$stage_total      = $history_totals[ $visit_id ][ $stage_key ] ?? 0;
+		$current_base     = isset( $visit_row['timer_elapsed_seconds'] ) ? (int) $visit_row['timer_elapsed_seconds'] : 0;
+		$started_at       = isset( $visit_row['timer_started_at'] ) ? strtotime( (string) $visit_row['timer_started_at'] ) : false;
+		$stint_elapsed    = ( false !== $started_at && $started_at > 0 ) ? max( 0, time() - $started_at ) : 0;
+		$elapsed_total    = max( $stage_total + $stint_elapsed, $current_base );
+		$checkout_comment = '' === $comment ? __( 'Checked out', 'bb-groomflow' ) : sanitize_textarea_field( $comment );
+		$now_gmt          = $this->plugin->now();
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$result = $this->wpdb->query(
+			$this->wpdb->prepare(
+				"UPDATE {$this->tables['visits']}
+				SET status = %s, check_out_at = %s, timer_elapsed_seconds = %d, timer_started_at = NULL, updated_at = %s
+				WHERE id = %d",
+				'completed',
+				$now_gmt,
+				$elapsed_total,
+				$now_gmt,
+				$visit_id
+			)
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+
+		if ( false === $result ) {
+			return new WP_Error(
+				'bbgf_visit_checkout_failed',
+				__( 'Unable to check out the visit.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$history_elapsed = max( 0, $elapsed_total - $stage_total );
+		$history_id      = $this->log_stage_history(
+			$visit_id,
+			'' !== $stage_key ? $stage_key : 'active',
+			'checked_out',
+			$checkout_comment,
+			$user_id,
+			$history_elapsed
+		);
+
+		$updated = $this->get_visit(
+			$visit_id,
+			array(
+				'include_history' => true,
+			)
+		);
+
+		if ( null === $updated ) {
+			return new WP_Error(
+				'bbgf_visit_checkout_fetch_failed',
+				__( 'Visit checked out but could not be loaded.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$history_entry = null;
+		if ( $history_id ) {
+			$history_entry = $this->get_stage_history_entry( $history_id );
+		}
+
+		$this->flush_cache( isset( $visit_row['view_id'] ) ? (int) $visit_row['view_id'] : null );
+
+		return array(
+			'visit'         => $updated,
+			'history_entry' => $history_entry,
+		);
+	}
+
+	/**
 	 * Link an existing attachment to a visit.
 	 *
 	 * @param int  $visit_id              Visit ID.
@@ -1056,6 +1153,28 @@ class Visit_Service {
 				__( 'Unable to process the uploaded photo.', 'bb-groomflow' ),
 				array( 'status' => 500 )
 			);
+		}
+
+		$max_dimension = 1800;
+		$image_editor  = wp_get_image_editor( $uploaded_file );
+		if ( ! is_wp_error( $image_editor ) ) {
+			$size = $image_editor->get_size();
+			if ( is_array( $size ) && ( (int) $size['width'] > $max_dimension || (int) $size['height'] > $max_dimension ) ) {
+				$image_editor->set_quality( 82 );
+				$image_editor->resize( $max_dimension, $max_dimension, false );
+				$saved = $image_editor->save( $uploaded_file );
+				if ( is_wp_error( $saved ) ) {
+					return new WP_Error(
+						'bbgf_visit_photo_upload_failed',
+						__( 'Unable to normalise the uploaded photo.', 'bb-groomflow' ),
+						array( 'status' => 500 )
+					);
+				}
+
+				if ( ! empty( $saved['mime-type'] ) ) {
+					$upload['type'] = $saved['mime-type'];
+				}
+			}
 		}
 
 		$attachment = array(
@@ -1543,7 +1662,12 @@ class Visit_Service {
 	 */
 	private function calculate_stage_timer_seconds( array $visit, int $history_total = 0 ): int {
 		$base    = max( $history_total, (int) ( $visit['timer_elapsed_seconds'] ?? 0 ) );
+		$closed  = ! empty( $visit['check_out_at'] );
 		$started = $visit['timer_started_at'] ?? null;
+
+		if ( $closed ) {
+			return $base;
+		}
 
 		if ( ! $started ) {
 			return $base;
@@ -2356,8 +2480,8 @@ class Visit_Service {
 			return '';
 		}
 
-		$sql        = "SELECT MAX(updated_at) FROM {$this->tables['visits']} WHERE view_id = %d";
-		$sql_args   = array( $view_id );
+		$sql        = "SELECT MAX(updated_at) FROM {$this->tables['visits']} WHERE view_id = %d AND check_out_at IS NULL AND (status IS NULL OR status <> %s)";
+		$sql_args   = array( $view_id, 'completed' );
 		$stage_keys = array();
 
 		if ( ! empty( $stage_filter_list ) ) {

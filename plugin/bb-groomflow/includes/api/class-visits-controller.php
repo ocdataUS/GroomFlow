@@ -180,6 +180,24 @@ class Visits_Controller extends REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			sprintf( '/%s/(?P<id>\\d+)/checkout', $this->rest_base ),
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'checkout_visit' ),
+					'permission_callback' => array( $this, 'checkout_visit_permissions_check' ),
+					'args'                => array(
+						'comment' => array(
+							'type'        => 'string',
+							'description' => __( 'Optional checkout note.', 'bb-groomflow' ),
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			sprintf( '/%s/(?P<id>\\d+)/photo', $this->rest_base ),
 			array(
 				array(
@@ -276,6 +294,16 @@ class Visits_Controller extends REST_Controller {
 	 */
 	public function move_visit_permissions_check( $request ) {
 		return $this->check_capability( 'bbgf_move_stages' );
+	}
+
+	/**
+	 * Permission check for checking out a visit.
+	 *
+	 * @param WP_REST_Request $request Request instance.
+	 * @return true|WP_Error
+	 */
+	public function checkout_visit_permissions_check( $request ) {
+		return $this->check_capability( 'bbgf_edit_visits' );
 	}
 
 	/**
@@ -557,6 +585,34 @@ class Visits_Controller extends REST_Controller {
 		$user_id = $user ? (int) $user->ID : 0;
 
 		$result = $this->visit_service->move_visit( $visit_id, $destination, $comment, $user_id );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response( $result );
+	}
+
+	/**
+	 * Check out a visit and remove it from active boards.
+	 *
+	 * @param WP_REST_Request $request Request instance.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function checkout_visit( $request ) {
+		if ( $this->is_public_token_request( $request ) ) {
+			return new WP_Error(
+				'bbgf_visit_public_readonly',
+				__( 'Public board access is read-only.', 'bb-groomflow' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$visit_id = (int) $request->get_param( 'id' );
+		$comment  = (string) $request->get_param( 'comment' );
+		$user     = wp_get_current_user();
+		$user_id  = $user ? (int) $user->ID : 0;
+
+		$result = $this->visit_service->checkout_visit( $visit_id, $user_id, $comment );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}

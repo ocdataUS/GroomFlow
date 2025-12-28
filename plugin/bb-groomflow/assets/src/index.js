@@ -34,6 +34,10 @@ const strings = {
 	modalViewPhoto: settings.strings?.modalViewPhoto ?? 'View full size',
 	modalSave: settings.strings?.modalSave ?? 'Save changes',
 	modalSaving: settings.strings?.modalSaving ?? 'Saving…',
+	modalCheckout: settings.strings?.modalCheckout ?? 'Check out',
+	modalCheckedOut: settings.strings?.modalCheckedOut ?? 'Checked out',
+	modalCheckoutAt: settings.strings?.modalCheckoutAt ?? 'Checked out at',
+	modalPreparingUpload: settings.strings?.modalPreparingUpload ?? 'Preparing photos…',
 	modalNoHistory: settings.strings?.modalNoHistory ?? 'No history recorded yet.',
 	modalNoPhotos: settings.strings?.modalNoPhotos ?? 'No photos uploaded for this visit.',
 	searchPlaceholder: settings.strings?.searchPlaceholder ?? 'Search clients, guardians, services…',
@@ -451,6 +455,132 @@ const getPlaceholderPhoto = (visit) => {
 
 const getVisitPhoto = (visit) => extractPrimaryPhoto(visit?.photos) ?? getPlaceholderPhoto(visit);
 
+const loadImageForCanvas = async (file) => {
+	if (!file) {
+		throw new Error('Missing file');
+	}
+
+	if (window.createImageBitmap) {
+		try {
+			const bitmap = await createImageBitmap(file);
+			return {
+				source: bitmap,
+				width: bitmap.width,
+				height: bitmap.height,
+				cleanup: () => {
+					if (typeof bitmap.close === 'function') {
+						bitmap.close();
+					}
+				},
+			};
+		} catch (error) {
+			// Fall back to Image element loader below.
+		}
+	}
+
+	return new Promise((resolve, reject) => {
+		const url = URL.createObjectURL(file);
+		const image = new Image();
+		image.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve({
+				source: image,
+				width: image.naturalWidth || image.width,
+				height: image.naturalHeight || image.height,
+				cleanup: () => {},
+			});
+		};
+		image.onerror = (error) => {
+			URL.revokeObjectURL(url);
+			reject(error || new Error('Unable to load image'));
+		};
+		image.src = url;
+	});
+};
+
+const normalizeImageFile = async (file, options = {}) => {
+	if (!(file instanceof File) || typeof file.type !== 'string' || !file.type.startsWith('image/')) {
+		return file;
+	}
+
+	const maxDimension = Number(options.maxDimension ?? 1600);
+	const maxBytes = Number(options.maxBytes ?? 1.8 * 1024 * 1024);
+	const baseQuality = Number(options.quality ?? 0.82);
+	const image = await loadImageForCanvas(file);
+	const largestSide = Math.max(image.width, image.height);
+
+	if (!largestSide) {
+		image.cleanup();
+		return file;
+	}
+
+	const scale = largestSide > maxDimension ? maxDimension / largestSide : 1;
+	const targetWidth = Math.max(1, Math.round(image.width * scale));
+	const targetHeight = Math.max(1, Math.round(image.height * scale));
+	const canvas = document.createElement('canvas');
+	canvas.width = targetWidth;
+	canvas.height = targetHeight;
+
+	const ctx = canvas.getContext('2d');
+	if (!ctx) {
+		return file;
+	}
+
+	ctx.drawImage(image.source, 0, 0, targetWidth, targetHeight);
+
+	const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+	const toBlob = (quality) =>
+		new Promise((resolve, reject) => {
+			canvas.toBlob(
+				(blob) => {
+					if (blob) {
+						resolve(blob);
+					} else {
+						reject(new Error('Unable to process image'));
+					}
+				},
+				mimeType,
+				quality
+			);
+		});
+
+	let quality = mimeType === 'image/png' ? 0.92 : baseQuality;
+	let blob = await toBlob(quality);
+	let attempts = 0;
+
+	while (blob && blob.size > maxBytes && quality > 0.5 && attempts < 5) {
+		quality = Math.max(0.5, quality - 0.1);
+		blob = await toBlob(quality);
+		attempts += 1;
+	}
+
+	if (blob && blob.size > maxBytes && scale === 1) {
+		const compressionScale = Math.sqrt(maxBytes / blob.size);
+		const scaledWidth = Math.max(1, Math.round(targetWidth * compressionScale));
+		const scaledHeight = Math.max(1, Math.round(targetHeight * compressionScale));
+		canvas.width = scaledWidth;
+		canvas.height = scaledHeight;
+		ctx.clearRect(0, 0, scaledWidth, scaledHeight);
+		ctx.drawImage(image.source, 0, 0, scaledWidth, scaledHeight);
+		blob = await toBlob(quality);
+	}
+
+	if (!blob) {
+		image.cleanup();
+		return file;
+	}
+
+	image.cleanup();
+
+	const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
+	const extension = mimeType === 'image/png' ? 'png' : 'jpg';
+
+	return new File([blob], `${baseName}.${extension}`, {
+		type: mimeType,
+		lastModified: Date.now(),
+	});
+};
+
 const buildServiceSummary = (services) =>
 	ensureArray(services)
 		.map((service) => safeString(service?.name))
@@ -794,6 +924,42 @@ const createApiClient = (rest = {}, context = {}) => {
 		return response.json();
 	};
 
+	const checkoutVisit = async (visitId, payload = {}) => {
+		const endpoint = rest.endpoints?.visits;
+		if (!endpoint) {
+			throw new Error('Visit endpoint unavailable');
+		}
+
+		const url = buildUrl(`${endpoint}/${encodeURIComponent(visitId)}/checkout`);
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				...buildHeaders(),
+				'Content-Type': 'application/json',
+			},
+			credentials: 'same-origin',
+			body: JSON.stringify({
+				comment: payload.comment ?? '',
+			}),
+		});
+
+		if (!response.ok) {
+			let message = `Checkout failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// Ignore parse errors.
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
 	const updateVisit = async (visitId, payload = {}) => {
 		const endpoint = rest.endpoints?.visits;
 		if (!endpoint) {
@@ -983,6 +1149,7 @@ const createApiClient = (rest = {}, context = {}) => {
 		fetchBoard,
 		fetchVisit,
 		moveVisit,
+		checkoutVisit,
 		updateVisit,
 		createVisit,
 		searchIntake,
@@ -1231,6 +1398,7 @@ const renderBoard = (state, root, config, copy) => {
 	currentPresentation = ui;
 
 	const preservedModal = root.querySelector('#bbgf-modal');
+	const preservedIntakeModal = root.querySelector('#bbgf-intake-modal');
 
 	root.dataset.readonly = board.readonly ? 'true' : 'false';
 	root.dataset.isPublic = board.is_public ? 'true' : 'false';
@@ -1357,10 +1525,12 @@ const renderBoard = (state, root, config, copy) => {
 			<div class="bbgf-modal__backdrop" data-role="bbgf-modal-backdrop"></div>
 			<div class="bbgf-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="bbgf-modal-title">
 				<header class="bbgf-modal__header">
-					<h2 id="bbgf-modal-title" class="bbgf-modal__title">${copy.modalTitle}</h2>
+					<div class="bbgf-modal__heading">
+						<h2 id="bbgf-modal-title" class="bbgf-modal__title">${copy.modalTitle}</h2>
+						<span class="bbgf-modal__badge" data-role="bbgf-modal-readonly" hidden>${copy.modalReadOnly}</span>
+					</div>
 					<div class="bbgf-modal__nav" data-role="bbgf-modal-nav"></div>
-					<span class="bbgf-modal__badge" data-role="bbgf-modal-readonly" hidden>${copy.modalReadOnly}</span>
-					<button type="button" class="bbgf-button bbgf-modal-close" data-role="bbgf-modal-close">${copy.modalClose}</button>
+					<button type="button" class="bbgf-modal__close" data-role="bbgf-modal-close" aria-label="${copy.modalClose}">&times;</button>
 				</header>
 				<nav class="bbgf-modal__tabs" data-role="bbgf-modal-tabs"></nav>
 				<div class="bbgf-modal__body" data-role="bbgf-modal-body">
@@ -1371,7 +1541,10 @@ const renderBoard = (state, root, config, copy) => {
 		root.appendChild(modal);
 	}
 
-	if (!root.querySelector('#bbgf-intake-modal')) {
+	const intakeModalExisting = preservedIntakeModal || root.querySelector('#bbgf-intake-modal');
+	if (intakeModalExisting) {
+		root.appendChild(intakeModalExisting);
+	} else {
 		const intakeModal = document.createElement('div');
 		intakeModal.id = 'bbgf-intake-modal';
 		intakeModal.setAttribute('hidden', 'hidden');
@@ -1380,8 +1553,10 @@ const renderBoard = (state, root, config, copy) => {
 			<div class="bbgf-modal__backdrop" data-role="bbgf-intake-close"></div>
 			<div class="bbgf-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="bbgf-intake-title">
 				<header class="bbgf-modal__header">
-					<h2 id="bbgf-intake-title" class="bbgf-modal__title">${escapeHtml(strings.intakeTitle)}</h2>
-					<button type="button" class="bbgf-button bbgf-modal-close" data-role="bbgf-intake-close">${escapeHtml(strings.modalClose)}</button>
+					<div class="bbgf-modal__heading">
+						<h2 id="bbgf-intake-title" class="bbgf-modal__title">${escapeHtml(strings.intakeTitle)}</h2>
+					</div>
+					<button type="button" class="bbgf-modal__close" data-role="bbgf-intake-close" aria-label="${escapeHtml(strings.modalClose)}">&times;</button>
 				</header>
 				<div class="bbgf-modal__body bbgf-intake-body" data-role="bbgf-intake-body">
 					<p class="bbgf-modal__loading">${escapeHtml(strings.loading)}</p>
@@ -1665,6 +1840,7 @@ const initialState = {
 		},
 		error: '',
 		pendingUploads: [],
+		isPreparingUploads: false,
 	},
 	intake: getDefaultIntakeState(settings.initialBoard || null),
 	catalog: {
@@ -1688,6 +1864,56 @@ const setModalState = (updater) => {
 			modal: modal,
 		};
 	});
+};
+
+const preparePhotoUploads = async (files) => {
+	const token = ++photoPreparationToken;
+	const list = Array.isArray(files) ? files : [];
+
+	setModalState((modal) => ({
+		...modal,
+		isPreparingUploads: true,
+		error: '',
+		pendingUploads: [],
+	}));
+
+	if (!list.length) {
+		setModalState((modal) => ({
+			...modal,
+			isPreparingUploads: false,
+			pendingUploads: [],
+		}));
+		return;
+	}
+
+	try {
+		const normalized = [];
+		for (const file of list) {
+			// eslint-disable-next-line no-await-in-loop
+			normalized.push(await normalizeImageFile(file));
+		}
+
+		if (token !== photoPreparationToken) {
+			return;
+		}
+
+		setModalState((modal) => ({
+			...modal,
+			pendingUploads: normalized,
+			isPreparingUploads: false,
+		}));
+	} catch (error) {
+		if (token !== photoPreparationToken) {
+			return;
+		}
+
+		setModalState((modal) => ({
+			...modal,
+			pendingUploads: [],
+			isPreparingUploads: false,
+			error: error?.message || strings.loadingError,
+		}));
+	}
 };
 
 const setIntakeState = (updater) => {
@@ -1846,6 +2072,33 @@ const handleModalMove = async (direction) => {
 	}
 };
 
+const handleModalCheckout = async () => {
+	const state = store.getState();
+	const { modal, board } = state;
+
+	if (!modal.visitId || modal.isSaving || modal.readOnly || board?.readonly) {
+		return;
+	}
+
+	setModalState({ isSaving: true, error: '' });
+
+	try {
+		await api.checkoutVisit(modal.visitId, {});
+		closeModal();
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		const message = error?.message || strings.loadingError;
+		setModalState({ error: message, isSaving: false });
+		announce(message);
+		return;
+	}
+
+	setModalState((current) => ({
+		...current,
+		isSaving: false,
+	}));
+};
+
 const refreshBoardAfterModalSave = () => {
 	loadBoard({ reason: 'modal-save', forceFull: true });
 };
@@ -1857,6 +2110,14 @@ const handleModalPhotoUpload = async (button) => {
 	const { modal } = store.getState();
 	const files = ensureArray(modal.pendingUploads);
 	const visible = visibleCheckbox ? Boolean(visibleCheckbox.checked) : true;
+
+	if (modal.isPreparingUploads) {
+		setModalState((current) => ({
+			...current,
+			error: strings.modalPreparingUpload || strings.loadingError,
+		}));
+		return;
+	}
 
 	if (!files.length || !modal.visitId) {
 		return;
@@ -1875,6 +2136,7 @@ const handleModalPhotoUpload = async (button) => {
 		setModalState((current) => ({
 			...current,
 			pendingUploads: [],
+			isPreparingUploads: false,
 		}));
 		await openVisitModal(modal.visitId, { tab: modal.activeTab || 'photos' });
 		refreshBoardAfterModalSave();
@@ -2063,6 +2325,7 @@ let lastModalSnapshot = null;
 let lastIntakeSnapshot = null;
 let lastCatalogRef = null;
 let lastErrorsRef = null;
+let photoPreparationToken = 0;
 let activeTouchDrag = null;
 let intakeSearchTimer = null;
 
@@ -2481,10 +2744,14 @@ const handleIntakeSubmit = async () => {
 };
 
 const closeModal = () => {
+	photoPreparationToken += 1;
 	store.setState((state) => ({
 		modal: {
 			...state.modal,
 			isOpen: false,
+			isSaving: false,
+			isPreparingUploads: false,
+			pendingUploads: [],
 		},
 	}));
 };
@@ -2520,6 +2787,11 @@ const handleModalContainerClick = (event) => {
 		return;
 	}
 
+	if (role === 'bbgf-modal-checkout') {
+		handleModalCheckout();
+		return;
+	}
+
 	if (role === 'bbgf-upload-photo') {
 		handleModalPhotoUpload(event.target);
 		return;
@@ -2539,9 +2811,11 @@ const handleModalContainerClick = (event) => {
 		if (fileInput) {
 			fileInput.value = '';
 		}
+		photoPreparationToken += 1;
 		setModalState((modal) => ({
 			...modal,
 			pendingUploads: [],
+			isPreparingUploads: false,
 		}));
 		return;
 	}
@@ -2592,10 +2866,7 @@ const handleModalContainerChange = (event) => {
 
 	if (dataset?.role === 'bbgf-photo-file') {
 		const files = event.target.files ? Array.from(event.target.files) : [];
-		setModalState((modal) => ({
-			...modal,
-			pendingUploads: files,
-		}));
+		preparePhotoUploads(files);
 	}
 };
 
@@ -2620,6 +2891,7 @@ const openVisitModal = async (visitId, options = {}) => {
 			form: buildModalFormFromVisit(boardVisit),
 			error: '',
 			pendingUploads: [],
+			isPreparingUploads: false,
 		},
 	});
 
@@ -2924,21 +3196,42 @@ const renderModal = (state, root, copy) => {
 	}
 
 	if (nav) {
-		if (modal.visit && settings.capabilities?.moveStages && !state.board?.readonly && !modal.readOnly) {
+		if (modal.visit) {
 			const neighbors = getStageNeighbors(state.board, modal.visit.current_stage);
 			const stageLabel =
 				ensureArray(state.board?.stages).find((stage) => stage.key === modal.visit.current_stage)?.label ?? modal.visit.current_stage;
-			const prevButton = neighbors.prev
-				? `<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-modal-move" data-direction="prev">${escapeHtml(copy.movePrev)}</button>`
-				: '';
-			const nextButton = neighbors.next
-				? `<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-modal-move" data-direction="next">${escapeHtml(copy.moveNext)}</button>`
-				: '';
+			const canEdit = settings.capabilities?.editVisits && !state.board?.readonly && !modal.readOnly;
+			const canMove = settings.capabilities?.moveStages && !state.board?.readonly && !modal.readOnly && !modal.visit.check_out_at;
+			const prevButton =
+				canMove && neighbors.prev
+					? `<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-modal-move" data-direction="prev">${escapeHtml(copy.movePrev)}</button>`
+					: '';
+			const nextButton =
+				canMove && neighbors.next
+					? `<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-modal-move" data-direction="next">${escapeHtml(copy.moveNext)}</button>`
+					: '';
+			const checkoutButton =
+				canEdit && !modal.visit.check_out_at
+					? `<button type="button" class="bbgf-button bbgf-button--critical" data-role="bbgf-modal-checkout" ${modal.isSaving ? 'disabled' : ''}>${escapeHtml(
+							copy.modalCheckout
+						)}</button>`
+					: '';
+			const checkoutTime = modal.visit.check_out_at ? formatDateTime(modal.visit.check_out_at) : '';
+			const checkoutMeta =
+				modal.visit.check_out_at
+					? `<span class="bbgf-modal__nav-status">${escapeHtml(copy.modalCheckedOut || copy.modalCheckoutAt)}${
+							checkoutTime ? ` • ${escapeHtml(checkoutTime)}` : ''
+						}</span>`
+					: '';
 			nav.innerHTML = `
-				${prevButton}
-				${nextButton}
+				<div class="bbgf-modal__nav-actions">
+					${prevButton}
+					${nextButton}
+					${checkoutButton}
+				</div>
 				<div class="bbgf-modal__nav-info">
 					<span>${escapeHtml(stageLabel || copy.stageLabel)}</span>
+					${checkoutMeta}
 				</div>
 			`;
 		} else {
@@ -3012,7 +3305,7 @@ const renderModal = (state, root, copy) => {
 			const privateNotes = escapeHtml(visit.private_notes ?? '').replace(/\n/g, '<br>');
 			const summaryItems = [];
 			summaryItems.push({ label: copy.checkIn, value: checkIn || '-' });
-			summaryItems.push({ label: 'Check-out', value: checkOut || '-' });
+			summaryItems.push({ label: copy.modalCheckoutAt || 'Check-out', value: checkOut || '-' });
 			const summaryGridHtml = summaryItems
 				.map(
 					(item) =>
@@ -3165,11 +3458,14 @@ const renderModal = (state, root, copy) => {
 		} else if (modal.activeTab === 'photos') {
 			const photos = ensureArray(visit.photos);
 			const pendingUploads = ensureArray(modal.pendingUploads);
+			const isPreparingUploads = Boolean(modal.isPreparingUploads);
 			const pendingList = pendingUploads.length
 				? `<ul class="bbgf-photo-upload__list">${pendingUploads
 						.map((file) => `<li>${escapeHtml(file.name || 'Untitled file')}</li>`)
 						.join('')}</ul>`
-				: `<p class="bbgf-photo-upload__hint">${escapeHtml('Select images to preview filenames before uploading.')}</p>`;
+				: `<p class="bbgf-photo-upload__hint">${escapeHtml(
+						isPreparingUploads ? copy.modalPreparingUpload : 'Select images to preview filenames before uploading.'
+					)}</p>`;
 			let photoItems = photos
 				.map((photo) => {
 					const url = escapeHtml(photo.url ?? '');
@@ -3229,9 +3525,17 @@ const renderModal = (state, root, copy) => {
 						${pendingList}
 					</div>
 					<div class="bbgf-photo-upload__actions">
-						<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-photo-cancel" ${pendingUploads.length ? '' : 'disabled'}>Clear</button>
-						<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-upload-photo" ${pendingUploads.length ? '' : 'disabled'}>${escapeHtml(
-							pendingUploads.length ? `Upload ${pendingUploads.length} file${pendingUploads.length === 1 ? '' : 's'}` : copy.modalUploadPhoto
+						<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-photo-cancel" ${
+							modal.isSaving || isPreparingUploads ? 'disabled' : pendingUploads.length ? '' : 'disabled'
+						}>Clear</button>
+						<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-upload-photo" ${
+							isPreparingUploads || modal.isSaving || !pendingUploads.length ? 'disabled' : ''
+						}>${escapeHtml(
+							isPreparingUploads
+								? copy.modalPreparingUpload
+								: pendingUploads.length
+									? `Upload ${pendingUploads.length} file${pendingUploads.length === 1 ? '' : 's'}`
+									: copy.modalUploadPhoto
 						)}</button>
 					</div>
 				</div>` : ''}
@@ -3321,22 +3625,27 @@ const renderIntakeModal = (state, root, copy) => {
 		return;
 	}
 
+	const activeElement = container.contains(document.activeElement) ? document.activeElement : null;
+	const focusMeta = activeElement
+		? {
+				role: activeElement.dataset?.role,
+				section: activeElement.dataset?.section,
+				field: activeElement.dataset?.field,
+				selection:
+					typeof activeElement.selectionStart === 'number'
+						? { start: activeElement.selectionStart, end: activeElement.selectionEnd }
+						: null,
+		  }
+		: null;
+
 	const stages = ensureArray(board?.stages);
-	const views = ensureArray(settings.views);
-	const selectedViewId = intake.visit.view_id ?? board?.view?.id ?? null;
+	const viewLabel = safeString(board?.view?.name ?? board?.view?.slug ?? '');
 	const stageOptions = stages
 		.map((stage) => {
 			const key = safeString(stage.key ?? stage.stage_key ?? '');
 			const label = safeString(stage.label ?? key);
 			const selected = intake.visit.current_stage === key ? 'selected' : '';
 			return `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}</option>`;
-		})
-		.join('');
-	const viewOptions = views
-		.map((view) => {
-			const id = Number(view.id);
-			const selected = id === Number(selectedViewId) ? 'selected' : '';
-			return `<option value="${id}" ${selected}>${escapeHtml(view.name ?? view.slug ?? id)}</option>`;
 		})
 		.join('');
 
@@ -3486,12 +3795,7 @@ const renderIntakeModal = (state, root, copy) => {
 					${stageOptions || `<option value="">${escapeHtml(copy.stageLabel)}</option>`}
 				</select>
 			</div>
-			<div class="bbgf-intake-field">
-				<label>${escapeHtml(copy.viewSwitcher)}</label>
-				<select data-role="bbgf-intake-field" data-section="visit" data-field="view_id">
-					${viewOptions || `<option value="">${escapeHtml(copy.viewSwitcher)}</option>`}
-				</select>
-			</div>
+			${viewLabel ? `<p class="bbgf-intake-view-hint">${escapeHtml(`Will appear on the ${viewLabel} board`)}</p>` : ''}
 			<div class="bbgf-intake-field">
 				<label>${escapeHtml('Instructions')}</label>
 				<textarea data-role="bbgf-intake-field" data-section="visit" data-field="instructions">${escapeHtml(visit.instructions ?? '')}</textarea>
@@ -3529,6 +3833,47 @@ const renderIntakeModal = (state, root, copy) => {
 	)}</button>
 		</div>
 	`;
+
+	const restoreIntakeFocus = () => {
+		if (focusMeta?.role) {
+			let selector = `[data-role="${focusMeta.role}"]`;
+			if (focusMeta.section) {
+				selector += `[data-section="${focusMeta.section}"]`;
+			}
+			if (focusMeta.field) {
+				selector += `[data-field="${focusMeta.field}"]`;
+			}
+			let target = body.querySelector(selector);
+			if (!target) {
+				target = body.querySelector(`[data-role="${focusMeta.role}"]`);
+			}
+
+			if (target && typeof target.focus === 'function') {
+				target.focus({ preventScroll: true });
+				if (focusMeta.selection && typeof target.setSelectionRange === 'function') {
+					const { start, end } = focusMeta.selection;
+					target.setSelectionRange(start, end);
+				} else if (typeof target.setSelectionRange === 'function' && typeof target.value === 'string') {
+					const end = target.value.length;
+					target.setSelectionRange(end, end);
+				}
+			}
+			return;
+		}
+
+		if (intake.activeTab === 'search') {
+			const searchInput = body.querySelector('[data-role="bbgf-intake-search"]');
+			if (searchInput && typeof searchInput.focus === 'function') {
+				searchInput.focus({ preventScroll: true });
+				if (typeof searchInput.setSelectionRange === 'function') {
+					const end = searchInput.value.length;
+					searchInput.setSelectionRange(end, end);
+				}
+			}
+		}
+	};
+
+	restoreIntakeFocus();
 };
 
 const handleIntakeClick = (event) => {
@@ -3711,6 +4056,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		error: initialStateSnapshot.modal.error,
 		visitId: initialStateSnapshot.modal.visit?.id || null,
 		pendingUploads: initialStateSnapshot.modal.pendingUploads,
+		isPreparingUploads: initialStateSnapshot.modal.isPreparingUploads,
 	};
 	lastIntakeSnapshot = initialStateSnapshot.intake;
 	lastCatalogRef = initialStateSnapshot.catalog;
@@ -3758,6 +4104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			state.modal.isSaving !== lastModalSnapshot.isSaving ||
 			state.modal.error !== lastModalSnapshot.error ||
 			state.modal.pendingUploads !== lastModalSnapshot.pendingUploads ||
+			state.modal.isPreparingUploads !== lastModalSnapshot.isPreparingUploads ||
 			(state.modal.visit?.id || null) !== (lastModalSnapshot.visitId || null) ||
 			state.catalog !== lastCatalogRef;
 
@@ -3773,6 +4120,7 @@ document.addEventListener('DOMContentLoaded', () => {
 				error: state.modal.error,
 				visitId: state.modal.visit?.id || null,
 				pendingUploads: state.modal.pendingUploads,
+				isPreparingUploads: state.modal.isPreparingUploads,
 			};
 			lastCatalogRef = state.catalog;
 		}

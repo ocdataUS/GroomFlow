@@ -2,6 +2,9 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2025-12-28 | codex | Visit lifecycle hardening | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1766959360.txt` | PASS |
+| 2025-12-28 | codex | Visit lifecycle hardening | Manual visit lifecycle + modals walkthrough | `/opt/qa/artifacts/manual-visit-lifecycle-20251228T220301Z.txt` | PASS |
+| 2025-12-28 | codex | Visit lifecycle hardening | `wp eval rest_do_request(POST /bb-groomflow/v1/visits/2059/checkout)` | `/opt/qa/artifacts/rest-checkout-20251228T220436Z.txt` | PASS |
 | 2025-12-25 | codex | Intake modal tabs | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1766698745.txt` | PASS |
 | 2025-12-25 | codex | Intake modal tabs | `node scripts/test_intake_modal.js` | `/opt/qa/artifacts/intake-modal-smoke-20251225T213833Z.txt` | PASS |
 | 2025-12-25 | codex | Intake modal tabs | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1766696857.txt` | PASS |

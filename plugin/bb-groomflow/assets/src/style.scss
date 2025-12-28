@@ -794,6 +794,18 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	}
 }
 
+.bbgf-button--critical {
+	background: linear-gradient(135deg, var(--bbgf-critical), #fb7185);
+	color: #fff;
+	border-color: var(--bbgf-critical-border);
+	box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
+
+	&:hover,
+	&:focus-visible {
+		background: linear-gradient(135deg, #dc2626, var(--bbgf-critical));
+	}
+}
+
 .bbgf-board--readonly .bbgf-card-actions,
 #bbgf-board-root[data-readonly='true'] .bbgf-card-actions {
 	display: none;
@@ -954,6 +966,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 .bbgf-modal__dialog {
 	position: relative;
 	max-width: clamp(320px, 60vw, 640px);
+	max-height: 92vh;
 	margin: 5vh auto;
 	background: var(--bbgf-card-bg);
 	border-radius: 18px;
@@ -966,17 +979,24 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 }
 
 .bbgf-modal__header {
-	display: flex;
+	display: grid;
 	align-items: flex-start;
-	justify-content: space-between;
 	gap: 0.85rem;
 	padding: 1.1rem 1.4rem 1.1rem;
 	border-bottom: 1px solid var(--bbgf-border);
-	flex-wrap: wrap;
+	position: relative;
+	padding-right: 3.25rem;
 }
 
 .bbgf-modal__header > * {
 	flex-shrink: 0;
+}
+
+.bbgf-modal__heading {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
 }
 
 .bbgf-modal__tabs {
@@ -1032,6 +1052,31 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	margin: 0;
 }
 
+.bbgf-modal__close {
+	position: absolute;
+	top: 0.85rem;
+	right: 0.85rem;
+	border: 1px solid var(--bbgf-border);
+	background: rgba(255, 255, 255, 0.95);
+	border-radius: 10px;
+	width: 34px;
+	height: 34px;
+	display: inline-grid;
+	place-items: center;
+	font-size: 1.1rem;
+	font-weight: 700;
+	cursor: pointer;
+	box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+	color: var(--bbgf-muted);
+
+	&:hover,
+	&:focus-visible {
+		background: var(--bbgf-accent-soft);
+		color: var(--bbgf-accent);
+		outline: none;
+	}
+}
+
 .bbgf-modal__badge {
 	font-size: 0.75rem;
 	font-weight: 600;
@@ -1048,6 +1093,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	display: flex;
 	flex-direction: column;
 	gap: 1.25rem;
+	min-height: 0;
 }
 
 .bbgf-modal__error {
@@ -1060,11 +1106,17 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 }
 
 .bbgf-modal__nav {
+	display: grid;
+	gap: 0.6rem;
+	align-items: flex-start;
+	width: 100%;
+}
+
+.bbgf-modal__nav-actions {
 	display: flex;
 	gap: 0.6rem;
 	align-items: center;
 	flex-wrap: wrap;
-	width: 100%;
 }
 
 .bbgf-modal__nav-info {
@@ -1073,6 +1125,16 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	gap: 0.15rem;
 	font-size: 0.92rem;
 	color: var(--bbgf-muted);
+}
+
+.bbgf-modal__nav-info span:first-child {
+	font-weight: 700;
+	color: var(--bbgf-text);
+}
+
+.bbgf-modal__nav-status {
+	font-weight: 700;
+	color: var(--bbgf-text);
 }
 
 .bbgf-modal__nav button {
@@ -1321,13 +1383,16 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 .bbgf-intake-modal .bbgf-modal__dialog {
 	max-width: 1100px;
 	width: 100%;
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+}
+
+.bbgf-intake-modal .bbgf-modal__body {
+	flex: 1 1 auto;
 }
 
 .bbgf-intake-tabs {
-	position: sticky;
-	top: 0;
-	z-index: 2;
-	background: var(--bbgf-card-bg, #fff);
 	padding: 0.4rem 0.25rem 0.6rem;
 	margin-left: -0.25rem;
 	margin-right: -0.25rem;
@@ -1336,6 +1401,47 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 .bbgf-intake-panel-wrap {
 	display: block;
 	margin-top: 0.25rem;
+	overflow: auto;
+	min-height: 0;
+}
+
+.bbgf-intake-body {
+	max-height: none;
+	display: grid;
+	grid-template-rows: auto auto 1fr;
+	overflow: hidden;
+	gap: 0.65rem;
+	padding-top: 0.75rem;
+	min-height: 0;
+}
+
+.bbgf-intake-panel-wrap {
+	padding-right: 0.35rem;
+}
+
+.bbgf-intake-view-hint {
+	margin: 0.25rem 0 0.5rem;
+	color: var(--bbgf-muted);
+	font-size: 0.95rem;
+}
+
+.bbgf-intake-body .bbgf-modal__tabs {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	background: var(--bbgf-card-bg, #fff);
+}
+
+.bbgf-intake-body .bbgf-intake-selected-wrap {
+	position: sticky;
+	top: 3.1rem;
+	z-index: 2;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82));
+	padding-bottom: 0.15rem;
+}
+
+.bbgf-intake-body .bbgf-intake-panel-wrap {
+	padding-top: 0.25rem;
 }
 
 .bbgf-intake-selected-wrap {
