@@ -1,16 +1,19 @@
 # HOTFIX_PROTOCOL — GroomFlow v0 Beta
 
-Purpose: tightly control post-beta changes that unblock users without altering product scope.
+Purpose: hotfixes cover bug fixes, UX/layout adjustments, copy changes, and behaviour tweaks from real usage or direct feedback—handled one item at a time.
 
 Allowed changes:
+- Bug/UX/copy/behaviour fixes driven by beta feedback
 - Security fixes, data corruption stops, install/activation failures
 - Critical regressions in existing flows (admin CRUD, board/REST/CLI, notifications)
 - Dependency bumps required for security or compatibility
 
 Disallowed changes:
-- New features, UI redesigns, schema shifts, API contract changes
-- Roadmap work, experiments, or speculative refactors
+- New features, re-architecture, new systems, UI redesigns, schema shifts, API contract changes
+- Roadmap work, experiments, speculative refactors
 - Non-critical optimizations or polish
+
+This is an iterative prototype-hardening loop, not an emergency-only production response; avoid large punch lists and ship one qualifying item per hotfix branch.
 
 Execution steps:
 1. Confirm the issue qualifies (see allowed list) and capture repro + impact.
