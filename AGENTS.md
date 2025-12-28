@@ -21,7 +21,7 @@ This is the single starting point for beta work. Follow this path exactly; every
 8. **Plan + Asana:** Set a brief plan using the planning tool; if working an Asana task, lock it per `docs/ASANA_TOOLBOX.md` (comment `LOCKED…`, set GF Status to In progress, move to Doing).
 
 ## Doc Map (read order + reference)
-- **Must read now:** `README.md` (system overview + code map), `SPEC.md` (scope/requirements), `QA_TOOLBELT.md` (QA commands), `docs/workflow.md` (Docker + install loop).
+- **Must read now:** `README.md` (system overview + code map), `SPEC.md` (scope/requirements), `QA_TOOLBELT.md` (QA commands), `docs/workflow.md` (Docker + install loop), `docs/HOTFIX_PROTOCOL.md` (post-beta fixes).
 - **Reference when needed:** `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/DB_SCHEMA.md`, `docs/SECURITY.md`, `docs/UX_GUIDE.md`, `docker/README.md`, `scripts/qa_smoke.sh`.
 - **Breadcrumbs:** `docs/breadcrumbs/` (read newest before coding; use `docs/BREADCRUMBS_TEMPLATE.md` when adding one).
 - **Out of scope for onboarding:** Historical sprints/roadmaps and old refactor plans have been removed.
@@ -36,6 +36,11 @@ This is the single starting point for beta work. Follow this path exactly; every
 ## QA & Handoff
 - Required before handoff: packaged ZIP installed in Docker, demo data seeded, `qa-phpcs plugin/bb-groomflow` clean (document any intentional ignores), admin happy-path confirmed, artifacts stored under `/opt/qa/artifacts` and referenced in the breadcrumb.
 - Keep commits conventional; never commit build ZIPs. Push via SSH as needed (setup in `docs/workflow.md`).
+
+## Long-Running Task Continuity
+- Use `AGENT_HANDOFF.md` to record decisions, current state, blockers, and next actions for any task likely to exceed one session.
+- Treat `AGENT_HANDOFF.md` as authoritative for continuation; closed decisions may not be reopened without Product Owner direction.
+- Create/update it before stopping work; include artifact paths and branch status.
 
 ---
 
