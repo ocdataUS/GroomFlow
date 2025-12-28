@@ -25,8 +25,13 @@ const strings = {
 	modalSummary: settings.strings?.modalSummary ?? 'Summary',
 	modalNotes: settings.strings?.modalNotes ?? 'Notes',
 	modalServices: settings.strings?.modalServices ?? 'Services',
+	modalVisit: settings.strings?.modalVisit ?? 'Visit',
 	modalHistory: settings.strings?.modalHistory ?? 'History',
 	modalPhotos: settings.strings?.modalPhotos ?? 'Photos',
+	modalNoPrevious: settings.strings?.modalNoPrevious ?? 'No previous visits found.',
+	modalUploadPhoto: settings.strings?.modalUploadPhoto ?? 'Upload photo',
+	modalVisibleToGuardian: settings.strings?.modalVisibleToGuardian ?? 'Visible to guardian',
+	modalViewPhoto: settings.strings?.modalViewPhoto ?? 'View full size',
 	modalSave: settings.strings?.modalSave ?? 'Save changes',
 	modalSaving: settings.strings?.modalSaving ?? 'Saving…',
 	modalNoHistory: settings.strings?.modalNoHistory ?? 'No history recorded yet.',
@@ -38,9 +43,54 @@ const strings = {
 	autoRefresh: settings.strings?.autoRefresh ?? 'Auto-refresh in',
 	maskedGuardian: settings.strings?.maskedGuardian ?? 'Guardian hidden for lobby view',
 	errorFetching: settings.strings?.errorFetching ?? 'Unable to refresh the board. Please try again.',
+	activeVisits: settings.strings?.activeVisits ?? 'Active visits',
+	overdueVisits: settings.strings?.overdueVisits ?? 'Overdue',
+	flaggedVisits: settings.strings?.flaggedVisits ?? 'Flagged',
+	filtersActive: settings.strings?.filtersActive ?? 'Filters applied',
+	clearFilters: settings.strings?.clearFilters ?? 'Clear filters',
+	guardianLabel: settings.strings?.guardianLabel ?? 'Guardian',
+	stageLabel: settings.strings?.stageLabel ?? 'Stage',
+	stagesLabel: settings.strings?.stagesLabel ?? 'Stages',
+	intakeTitle: settings.strings?.intakeTitle ?? 'Check in a client',
+	intakeSearchLabel: settings.strings?.intakeSearchLabel ?? 'Search clients or guardians',
+	intakeNoResults: settings.strings?.intakeNoResults ?? 'No matches found. Add a new client below.',
+	intakeGuardian: settings.strings?.intakeGuardian ?? 'Guardian',
+	intakeClient: settings.strings?.intakeClient ?? 'Client',
+	intakeVisit: settings.strings?.intakeVisit ?? 'Visit details',
+	intakeSubmit: settings.strings?.intakeSubmit ?? 'Create visit',
+	intakeSaving: settings.strings?.intakeSaving ?? 'Creating visit…',
+	intakeSuccess: settings.strings?.intakeSuccess ?? 'Visit created and added to the board.',
+	intakeSearchHint: settings.strings?.intakeSearchHint ?? 'Search by client, guardian, phone, or email.',
 };
 
 const presentation = settings.presentation || {};
+const appearance = settings.appearance || {};
+const appearanceColors = appearance.colors || {};
+const allowedMetadataBlocks = ['meta', 'services', 'flags', 'notes'];
+
+const resolveMetadataOrder = () => {
+	const configured = Array.isArray(appearance.metadata_order) ? appearance.metadata_order : [];
+	const normalized = configured
+		.map((item) => {
+			const key = String(item || '').trim().toLowerCase();
+			if (['summary', 'checkin', 'check_in'].includes(key)) {
+				return 'meta';
+			}
+			return key;
+		})
+		.filter((item) => allowedMetadataBlocks.includes(item));
+
+	if (normalized.length) {
+		return normalized.filter((item, index) => normalized.indexOf(item) === index);
+	}
+
+	return allowedMetadataBlocks;
+};
+
+const showServicesSetting = appearance.show_services !== false;
+const showFlagsSetting = appearance.show_flags !== false;
+const showNotesSetting = appearance.show_notes !== false;
+
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
 const safeString = (value) => (typeof value === 'string' ? value : '');
 const toNumber = (value) => {
@@ -151,6 +201,7 @@ const applyBoardPatch = (currentBoard, patchBoard) => {
 		});
 	});
 
+	// Remove any changed visits from the current map so we can merge in the new records.
 	if (changedVisitIds.size) {
 		currentStageMap.forEach((stage, key) => {
 			if (!stage) {
@@ -174,10 +225,13 @@ const applyBoardPatch = (currentBoard, patchBoard) => {
 
 	patchStageMap.forEach((stage, key) => {
 		const existing = currentStageMap.get(key);
+		const existingVisits = ensureArray(existing?.visits).map((visit) => cloneVisit(visit));
+		const patchVisits = ensureArray(stage.visits).map((visit) => cloneVisit(visit));
+
 		const mergedStage = {
 			...(existing ?? {}),
 			...stage,
-			visits: ensureArray(stage.visits).map((visit) => cloneVisit(visit)),
+			visits: [...existingVisits, ...patchVisits],
 		};
 
 		currentStageMap.set(key, mergedStage);
@@ -219,13 +273,17 @@ const findVisitById = (board, visitId) => {
 
 const formatDuration = (totalSeconds) => {
 	if (!Number.isFinite(totalSeconds)) {
-		return '0s';
+		return '>1m';
 	}
 
 	const seconds = Math.max(0, Math.floor(totalSeconds));
 	const hours = Math.floor(seconds / 3600);
 	const minutes = Math.floor((seconds % 3600) / 60);
 	const remainingSeconds = seconds % 60;
+
+	if (seconds < 60) {
+		return '>1m';
+	}
 
 	if (hours >= 1) {
 		return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
@@ -399,6 +457,32 @@ const buildServiceSummary = (services) =>
 		.filter(Boolean)
 		.join(', ');
 
+const applyAppearanceTheme = (root) => {
+	if (!root) {
+		return;
+	}
+
+	const setColor = (token, value) => {
+		if (typeof value === 'string' && value) {
+			root.style.setProperty(token, value);
+		}
+	};
+
+	setColor('--bbgf-accent', appearanceColors.accent);
+	setColor('--bbgf-card-bg', appearanceColors.card);
+	setColor('--bbgf-column-bg', appearanceColors.column);
+	setColor('--bbgf-background-start', appearanceColors.background_start);
+	setColor('--bbgf-background-end', appearanceColors.background_end);
+	setColor('--bbgf-text', appearanceColors.text);
+	if (appearanceColors.text) {
+		setColor('--bbgf-muted', appearanceColors.text);
+		setColor('--bbgf-muted-soft', appearanceColors.text);
+	}
+	setColor('--bbgf-warning', appearanceColors.timer_warning);
+	setColor('--bbgf-critical', appearanceColors.timer_critical);
+	setColor('--bbgf-flag', appearanceColors.flag);
+};
+
 const escapeHtml = (value) => {
 	return safeString(value).replace(/[&<>"']/g, (char) => {
 		switch (char) {
@@ -537,6 +621,25 @@ const formatCheckIn = (isoString) => {
 	return time ? `${strings.checkIn} ${time}` : '';
 };
 
+const resolveTimerSeconds = (visit) => {
+	const raw = toNumber(visit?.timer_elapsed_seconds);
+	const maxReasonableSeconds = 60 * 60 * 24 * 14; // 14 days.
+
+	if (Number.isFinite(raw) && raw >= 0 && raw <= maxReasonableSeconds) {
+		return raw;
+	}
+
+	const startIso = visit?.timer_started_at || visit?.check_in_at;
+	if (startIso) {
+		const startDate = new Date(startIso);
+		if (!Number.isNaN(startDate.getTime())) {
+			return Math.max(0, Math.round((Date.now() - startDate.getTime()) / 1000));
+		}
+	}
+
+	return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+};
+
 const createStore = (initialState = {}) => {
 	let state = { ...initialState };
 	const listeners = new Set();
@@ -571,13 +674,14 @@ const createStore = (initialState = {}) => {
 };
 
 const createApiClient = (rest = {}, context = {}) => {
+	const fallbackNonce = window?.wpApiSettings?.nonce || '';
 	const buildHeaders = () => {
 		const headers = {
 			Accept: 'application/json',
 		};
 
-		if (rest.nonce) {
-			headers['X-WP-Nonce'] = rest.nonce;
+		if (rest.nonce || fallbackNonce) {
+			headers['X-WP-Nonce'] = rest.nonce || fallbackNonce;
 		}
 
 		return headers;
@@ -724,6 +828,133 @@ const createApiClient = (rest = {}, context = {}) => {
 		return response.json();
 	};
 
+	const createVisit = async (payload = {}) => {
+		const endpoint = rest.endpoints?.visits;
+		if (!endpoint) {
+			throw new Error('Visit endpoint unavailable');
+		}
+
+		const url = buildUrl(endpoint);
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				...buildHeaders(),
+				'Content-Type': 'application/json',
+			},
+			credentials: 'same-origin',
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			let message = `Create failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// Ignore parse errors.
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
+	const searchIntake = async (query = '') => {
+		const endpoint = rest.endpoints?.intakeSearch;
+		if (!endpoint) {
+			throw new Error('Intake search endpoint unavailable');
+		}
+
+		const url = buildUrl(endpoint, {
+			query,
+		});
+
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: buildHeaders(),
+			credentials: 'same-origin',
+		});
+
+		if (!response.ok) {
+			throw new Error(`Search failed with status ${response.status}`);
+		}
+
+		const data = await response.json();
+		return data?.items ?? [];
+	};
+
+	const addPhoto = async (visitId, file, visibleToGuardian = true) => {
+		const endpoint = rest.endpoints?.visits;
+		if (!endpoint) {
+			throw new Error('Visit endpoint unavailable');
+		}
+
+		const url = buildUrl(`${endpoint}/${encodeURIComponent(visitId)}/photo`);
+		const formData = new FormData();
+		formData.append('visible_to_guardian', visibleToGuardian ? '1' : '0');
+		formData.append('file', file);
+
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: buildHeaders(),
+			credentials: 'same-origin',
+			body: formData,
+		});
+
+		if (!response.ok) {
+			let message = `Photo upload failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// ignore
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
+	const updatePhoto = async (visitId, photoId, payload = {}) => {
+		const endpoint = rest.endpoints?.visits;
+		if (!endpoint) {
+			throw new Error('Visit endpoint unavailable');
+		}
+
+		const url = buildUrl(`${endpoint}/${encodeURIComponent(visitId)}/photo/${encodeURIComponent(photoId)}`);
+		const response = await fetch(url, {
+			method: 'PATCH',
+			headers: {
+				...buildHeaders(),
+				'Content-Type': 'application/json',
+			},
+			credentials: 'same-origin',
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			let message = `Photo update failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// ignore
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
 	const fetchServices = async () => {
 		const endpoint = rest.endpoints?.services;
 		if (!endpoint) {
@@ -753,13 +984,16 @@ const createApiClient = (rest = {}, context = {}) => {
 		fetchVisit,
 		moveVisit,
 		updateVisit,
+		createVisit,
+		searchIntake,
+		addPhoto,
+		updatePhoto,
 		fetchServices,
 	};
 };
 
 const createCardElement = (visit, stage, options) => {
 	const { copy, previous, next, canMove, pendingMoves, readonly, draggingVisitId, presentation = {} } = options;
-	const showNotes = presentation.showNotes !== false;
 
 	const stageKey = safeString(stage.key ?? stage.stage_key ?? '');
 	const card = document.createElement('article');
@@ -768,21 +1002,9 @@ const createCardElement = (visit, stage, options) => {
 	card.dataset.stage = stageKey;
 	card.dataset.updatedAt = safeString(visit.updated_at ?? '');
 	card.setAttribute('role', 'listitem');
-	card.setAttribute('aria-label', `${safeString(visit.client?.name ?? copy.unknownClient)} — ${safeString(stage.label ?? stageKey)}`);
-	if (presentation.mode === 'display') {
-		card.setAttribute('tabindex', '-1');
-		card.classList.add('bbgf-card--static');
-	} else {
-		card.setAttribute('tabindex', '0');
-		card.classList.remove('bbgf-card--static');
-	}
+	card.setAttribute('aria-label', safeString(visit.client?.name ?? copy.unknownClient));
 
-	const visitIdNumber = Number(visit.id);
-	const isPending = pendingMoves?.has(visitIdNumber);
-	const isDragging = draggingVisitId !== null && visitIdNumber === Number(draggingVisitId);
-	const canDrag = !readonly && settings.capabilities?.moveStages;
-
-	if (canDrag) {
+	if (!readonly && settings.capabilities?.moveStages) {
 		card.setAttribute('draggable', 'true');
 		card.classList.add('bbgf-card--draggable');
 	} else {
@@ -790,19 +1012,16 @@ const createCardElement = (visit, stage, options) => {
 		card.classList.remove('bbgf-card--draggable');
 	}
 
+	const visitIdNumber = Number(visit.id);
+	const isPending = pendingMoves?.has(visitIdNumber);
+	const isDragging = draggingVisitId !== null && visitIdNumber === Number(draggingVisitId);
 	card.classList.toggle('bbgf-card--pending', Boolean(isPending));
 	card.classList.toggle('is-dragging', Boolean(isDragging));
 	card.setAttribute('aria-grabbed', isDragging ? 'true' : 'false');
 
-	const timerSeconds = toNumber(visit.timer_elapsed_seconds) ?? 0;
+	const timerSeconds = resolveTimerSeconds(visit);
 	const timerState = getTimerState(timerSeconds, stage.timer_thresholds ?? {});
 	card.classList.add(`bbgf-card--timer-${timerState}`);
-
-	if (timerState === 'critical') {
-		card.classList.add('bbgf-card--overdue');
-	} else if (timerState === 'warning') {
-		card.classList.add('bbgf-card--capacity-warning');
-	}
 
 	const photoWrapper = document.createElement('div');
 	photoWrapper.className = 'bbgf-card-photo';
@@ -823,75 +1042,20 @@ const createCardElement = (visit, stage, options) => {
 	const body = document.createElement('div');
 	body.className = 'bbgf-card-body';
 
-	const header = document.createElement('div');
-	header.className = 'bbgf-card-header';
+	const topRow = document.createElement('div');
+	topRow.className = 'bbgf-card-top';
+	topRow.appendChild(photoWrapper);
+
+	const info = document.createElement('div');
+	info.className = 'bbgf-card-info';
 
 	const name = document.createElement('p');
 	name.className = 'bbgf-card-name';
 	name.textContent = safeString(visit.client?.name ?? copy.unknownClient);
-
-	const timer = document.createElement('span');
-	timer.className = 'bbgf-card-timer';
-	timer.dataset.state = timerState;
-	timer.dataset.seconds = String(Math.max(0, timerSeconds));
-	timer.textContent = formatDuration(timerSeconds);
-	name.appendChild(timer);
-
-	header.appendChild(name);
-
-	const meta = document.createElement('p');
-	meta.className = 'bbgf-card-meta';
-
-	const serviceSummary = buildServiceSummary(visit.services);
-	if (serviceSummary) {
-		const serviceSpan = document.createElement('span');
-		serviceSpan.textContent = serviceSummary;
-		meta.appendChild(serviceSpan);
-	}
-
-	const checkInText = formatCheckIn(visit.check_in_at);
-	if (checkInText) {
-		if (meta.childNodes.length) {
-			const separator = document.createElement('span');
-			separator.textContent = '•';
-			separator.setAttribute('aria-hidden', 'true');
-			meta.appendChild(separator);
-		}
-
-		const checkInSpan = document.createElement('span');
-		checkInSpan.textContent = checkInText;
-		meta.appendChild(checkInSpan);
-	}
-
-	if (meta.childNodes.length) {
-		header.appendChild(meta);
-	}
-
-	body.appendChild(header);
-
-	const services = ensureArray(visit.services);
-	if (services.length) {
-		const servicesWrapper = document.createElement('div');
-		servicesWrapper.className = 'bbgf-card-services';
-		servicesWrapper.setAttribute('aria-label', copy.services);
-
-		services.forEach((service) => {
-			const chip = document.createElement('span');
-			chip.className = 'bbgf-service-chip';
-			chip.setAttribute('aria-hidden', 'true');
-
-			const icon = safeString(service.icon);
-			const label = safeString(service.name);
-			chip.textContent = icon && icon !== label ? `${icon} ${label}` : label;
-
-			servicesWrapper.appendChild(chip);
-		});
-
-		body.appendChild(servicesWrapper);
-	}
+	info.appendChild(name);
 
 	const flags = ensureArray(visit.flags);
-	if (flags.length) {
+	if (flags.length && showFlagsSetting) {
 		const flagsWrapper = document.createElement('div');
 		flagsWrapper.className = 'bbgf-card-flags';
 		flagsWrapper.setAttribute('aria-label', copy.flags);
@@ -912,78 +1076,60 @@ const createCardElement = (visit, stage, options) => {
 			flagsWrapper.appendChild(chip);
 		});
 
-		body.appendChild(flagsWrapper);
+		info.appendChild(flagsWrapper);
 	}
 
-	const notes = safeString(visit.public_notes ?? visit.instructions ?? '');
-	if (showNotes && notes) {
-		const notesParagraph = document.createElement('p');
-		notesParagraph.className = 'bbgf-card-notes';
-		notesParagraph.textContent = notes;
-		body.appendChild(notesParagraph);
+	topRow.appendChild(info);
+	body.appendChild(topRow);
+
+	const timerRow = document.createElement('div');
+	timerRow.className = 'bbgf-card-meta';
+
+	const timer = document.createElement('span');
+	timer.className = 'bbgf-card-timer';
+	timer.dataset.state = timerState;
+	timer.dataset.seconds = String(timerSeconds);
+	timer.dataset.baseSeconds = String(timerSeconds);
+	timer.dataset.yellow = String(toNumber(stage.timer_thresholds?.yellow) ?? '');
+	timer.dataset.red = String(toNumber(stage.timer_thresholds?.red) ?? '');
+	timer.textContent = formatDuration(timerSeconds);
+	timerRow.appendChild(timer);
+
+	const services = ensureArray(visit.services);
+	if (services.length && showServicesSetting) {
+		const servicesWrapper = document.createElement('div');
+		servicesWrapper.className = 'bbgf-card-services';
+		servicesWrapper.setAttribute('aria-label', copy.services);
+
+		services.forEach((service) => {
+			const chip = document.createElement('span');
+			chip.className = 'bbgf-service-chip';
+			chip.setAttribute('aria-hidden', 'true');
+
+			const icon = safeString(service.icon);
+			const label = safeString(service.name);
+			chip.textContent = icon && icon !== label ? `${icon} ${label}` : label;
+
+			servicesWrapper.appendChild(chip);
+		});
+
+		body.appendChild(servicesWrapper);
 	}
 
-	if (!readonly && canMove && (previous || next)) {
-		const actions = document.createElement('div');
-		actions.className = 'bbgf-card-actions';
-		actions.setAttribute('aria-label', copy.stageControls);
+	const footer = document.createElement('div');
+	footer.className = 'bbgf-card-footer';
+	footer.appendChild(timerRow);
 
-		if (previous) {
-			const prevButton = document.createElement('button');
-			prevButton.type = 'button';
-			prevButton.className = 'bbgf-button bbgf-move-prev is-disabled';
-			prevButton.dataset.targetStage = safeString(previous.key ?? previous.stage_key ?? '');
-			prevButton.textContent = copy.movePrev;
-			const disabled =
-				!previous ||
-				!previous.key ||
-				readonly ||
-				!canMove ||
-				(pendingMoves && pendingMoves.has(Number(visit.id)));
-
-			if (disabled) {
-				prevButton.disabled = true;
-				prevButton.setAttribute('aria-disabled', 'true');
-				prevButton.classList.add('is-disabled');
-			} else {
-				prevButton.disabled = false;
-				prevButton.removeAttribute('aria-disabled');
-				prevButton.classList.remove('is-disabled');
-			}
-			actions.appendChild(prevButton);
-		}
-
-		if (next) {
-			const nextButton = document.createElement('button');
-			nextButton.type = 'button';
-			nextButton.className = 'bbgf-button bbgf-move-next is-disabled';
-			nextButton.dataset.targetStage = safeString(next.key ?? next.stage_key ?? '');
-			nextButton.textContent = copy.moveNext;
-			const disabled =
-				!next ||
-				!next.key ||
-				readonly ||
-				!canMove ||
-				(pendingMoves && pendingMoves.has(Number(visit.id)));
-
-			if (disabled) {
-				nextButton.disabled = true;
-				nextButton.setAttribute('aria-disabled', 'true');
-				nextButton.classList.add('is-disabled');
-			} else {
-				nextButton.disabled = false;
-				nextButton.removeAttribute('aria-disabled');
-				nextButton.classList.remove('is-disabled');
-			}
-			actions.appendChild(nextButton);
-		}
-
-		if (actions.childNodes.length) {
-			body.appendChild(actions);
-		}
+	const checkInText = formatCheckIn(visit.check_in_at);
+	if (checkInText) {
+		const checkInSpan = document.createElement('span');
+		checkInSpan.className = 'bbgf-card-checkin';
+		checkInSpan.textContent = checkInText;
+		footer.appendChild(checkInSpan);
 	}
 
-	card.appendChild(photoWrapper);
+	body.appendChild(footer);
+
 	card.appendChild(body);
 
 	return card;
@@ -994,45 +1140,16 @@ const createColumnElement = (stage, options) => {
 
 	const stageKey = safeString(stage.key ?? stage.stage_key ?? '');
 	const label = safeString(stage.label ?? stageKey);
-	const capacity = stage.capacity ?? {};
 	const visits = ensureArray(stage.visits);
 	const count = visits.length;
-	const softLimit = toNumber(capacity.soft);
-	const hardLimit = toNumber(capacity.hard);
 
 	const column = document.createElement('section');
 	column.className = 'bbgf-column';
 	column.dataset.stage = stageKey;
-	column.dataset.capacitySoft = Number.isFinite(softLimit) ? String(softLimit) : '';
-	column.dataset.capacityHard = Number.isFinite(hardLimit) ? String(hardLimit) : '';
 	column.dataset.visitCount = String(count);
-	column.dataset.availableSoft = Number.isFinite(capacity.available_soft) ? String(capacity.available_soft) : '';
-	column.dataset.availableHard = Number.isFinite(capacity.available_hard) ? String(capacity.available_hard) : '';
-	column.dataset.softExceeded = capacity.is_soft_exceeded ? 'true' : 'false';
-	column.dataset.hardExceeded = capacity.is_hard_exceeded ? 'true' : 'false';
-	column.dataset.capacityHint = buildCapacityHint(capacity, count);
 	column.setAttribute('role', 'listitem');
 	column.setAttribute('aria-label', label);
 	column.setAttribute('aria-dropeffect', readonly ? 'none' : 'move');
-
-	if (capacity.is_soft_exceeded && !capacity.is_hard_exceeded) {
-		column.classList.add('bbgf-column--soft-full');
-	}
-
-	if (capacity.is_hard_exceeded) {
-		column.classList.add('bbgf-column--hard-full');
-	}
-
-	const nearCapacity =
-		!capacity.is_soft_exceeded &&
-		!capacity.is_hard_exceeded &&
-		Number.isFinite(softLimit) &&
-		softLimit > 0 &&
-		(Number.isFinite(capacity.available_soft) ? capacity.available_soft : softLimit - count) <= 1;
-
-	if (nearCapacity) {
-		column.classList.add('bbgf-column--near-capacity');
-	}
 
 	const header = document.createElement('header');
 	header.className = 'bbgf-column-header';
@@ -1047,20 +1164,11 @@ const createColumnElement = (stage, options) => {
 
 	const countSpan = document.createElement('span');
 	countSpan.className = 'bbgf-column-count';
-	countSpan.dataset.role = 'bbgf-column-count';
-	countSpan.dataset.softLimit = Number.isFinite(softLimit) ? String(softLimit) : '';
-	countSpan.textContent = Number.isFinite(softLimit) && softLimit > 0 ? `${count} / ${softLimit}` : String(count);
-	countSpan.setAttribute('aria-label', Number.isFinite(softLimit) && softLimit > 0 ? `${count} of ${softLimit}` : String(count));
+	countSpan.textContent = String(count);
+	countSpan.setAttribute('aria-label', String(count));
 	title.appendChild(countSpan);
 
 	header.appendChild(title);
-
-	const capacityBadge = document.createElement('span');
-	capacityBadge.className = 'bbgf-capacity-badge';
-	capacityBadge.dataset.role = 'bbgf-capacity-hint';
-	capacityBadge.setAttribute('aria-hidden', 'true');
-	capacityBadge.textContent = column.dataset.capacityHint;
-	header.appendChild(capacityBadge);
 
 	column.appendChild(header);
 
@@ -1076,7 +1184,16 @@ const createColumnElement = (stage, options) => {
 		body.appendChild(empty);
 	} else {
 		visits.forEach((visit) => {
-			const card = createCardElement(visit, stage, { copy, previous, next, canMove, pendingMoves, readonly, draggingVisitId, presentation });
+			const card = createCardElement(visit, stage, {
+				copy,
+				previous,
+				next,
+				canMove,
+				pendingMoves,
+				readonly,
+				draggingVisitId,
+				presentation,
+			});
 			body.appendChild(card);
 		});
 	}
@@ -1093,228 +1210,8 @@ const getActiveViewSlug = (state) =>
 	settings.view?.slug ||
 	'';
 
-const buildDisplayControls = (ui) => {
-	if (!ui.showFullscreen) {
-		return null;
-	}
-
-	const controls = document.createElement('div');
-	controls.className = 'bbgf-display-controls';
-
-	const fullscreenToggle = document.createElement('button');
-	fullscreenToggle.type = 'button';
-	fullscreenToggle.className = 'bbgf-button bbgf-button--ghost bbgf-toolbar-fullscreen';
-	fullscreenToggle.dataset.role = 'bbgf-fullscreen-toggle';
-	fullscreenToggle.textContent = strings.fullscreen;
-
-	controls.appendChild(fullscreenToggle);
-
-	return controls;
-};
-
-const buildInteractiveToolbar = (state, board, config, copy, ui) => {
-	if (!ui.showToolbar) {
-		return null;
-	}
-
-	const toolbar = document.createElement('div');
-	toolbar.id = 'bbgf-board-toolbar';
-	toolbar.className = 'bbgf-board-toolbar';
-
-	const views = ensureArray(config.views);
-	const activeSlug = getActiveViewSlug(state);
-
-	if (ui.viewSwitcher !== 'none' && views.length) {
-		if (ui.viewSwitcher === 'dropdown') {
-			const viewWrapper = document.createElement('div');
-			viewWrapper.className = 'bbgf-toolbar-view';
-			viewWrapper.setAttribute('role', 'group');
-			viewWrapper.setAttribute('aria-label', copy.viewSwitcher);
-
-			const select = document.createElement('select');
-			select.className = 'bbgf-view-select';
-			select.dataset.role = 'bbgf-view-select';
-
-			views.forEach((view) => {
-				const option = document.createElement('option');
-				const slug = safeString(view.slug ?? view.key ?? '');
-				option.value = slug;
-				option.textContent = safeString(view.name ?? view.label ?? slug);
-				if (slug === activeSlug) {
-					option.selected = true;
-				}
-				select.appendChild(option);
-			});
-
-			viewWrapper.appendChild(select);
-			toolbar.appendChild(viewWrapper);
-		} else {
-			const viewGroup = document.createElement('div');
-			viewGroup.className = 'bbgf-toolbar-view';
-			viewGroup.setAttribute('role', 'group');
-			viewGroup.setAttribute('aria-label', copy.viewSwitcher);
-
-			views.forEach((view) => {
-				const slug = safeString(view.slug ?? view.key ?? '');
-				if (!slug) {
-					return;
-				}
-
-				const button = document.createElement('button');
-				button.type = 'button';
-				button.className = `bbgf-button ${slug === activeSlug ? 'bbgf-button--primary' : 'bbgf-button--ghost'}`;
-				button.dataset.view = slug;
-				button.setAttribute('aria-pressed', slug === activeSlug ? 'true' : 'false');
-				button.textContent = safeString(view.name ?? view.label ?? slug);
-
-				viewGroup.appendChild(button);
-			});
-
-			if (viewGroup.childNodes.length) {
-				toolbar.appendChild(viewGroup);
-			}
-		}
-	}
-
-	if (ui.showSearch) {
-		const searchWrapper = document.createElement('div');
-		searchWrapper.className = 'bbgf-toolbar-search';
-		const searchLabel = document.createElement('label');
-		searchLabel.className = 'screen-reader-text';
-		searchLabel.textContent = copy.searchPlaceholder;
-		const searchInput = document.createElement('input');
-		searchInput.type = 'search';
-		searchInput.className = 'bbgf-toolbar-search__input';
-		searchInput.placeholder = copy.searchPlaceholder;
-		searchInput.value = state.filters?.query ?? '';
-		searchInput.dataset.role = 'bbgf-toolbar-search';
-		searchWrapper.appendChild(searchLabel);
-		searchWrapper.appendChild(searchInput);
-		toolbar.appendChild(searchWrapper);
-	}
-
-	let filterWrapper = null;
-	if (ui.showFilters) {
-		const filterOptions = getBoardFilterOptions(board);
-		const filtersState = state.filters ?? { query: '', services: [], flags: [] };
-
-		filterWrapper = document.createElement('div');
-		filterWrapper.className = 'bbgf-toolbar-filters';
-
-		const makeFilter = (labelText, role, options, selectedValues) => {
-			if (!options.length) {
-				return null;
-			}
-
-			const field = document.createElement('label');
-			field.className = 'bbgf-toolbar-filter';
-			field.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
-
-			const select = document.createElement('select');
-			select.className = 'bbgf-toolbar-select';
-			select.multiple = true;
-			select.size = Math.min(options.length, 6);
-			select.dataset.role = role;
-
-			const selectedSet = new Set(ensureArray(selectedValues).map((value) => String(value)));
-
-			options.forEach((option) => {
-				const opt = document.createElement('option');
-				opt.value = String(option.id);
-				opt.textContent = option.name;
-				if (selectedSet.has(String(option.id))) {
-					opt.selected = true;
-				}
-				select.appendChild(opt);
-			});
-
-			field.appendChild(select);
-
-			return field;
-		};
-
-		const servicesFilter = makeFilter(copy.filterServices, 'bbgf-filter-services', filterOptions.services, filtersState.services || []);
-		const flagsFilter = makeFilter(copy.filterFlags, 'bbgf-filter-flags', filterOptions.flags, filtersState.flags || []);
-
-		if (servicesFilter) {
-			filterWrapper.appendChild(servicesFilter);
-		}
-
-		if (flagsFilter) {
-			filterWrapper.appendChild(flagsFilter);
-		}
-
-		if (filterWrapper.childNodes.length) {
-			const resetButton = document.createElement('button');
-			resetButton.type = 'button';
-			resetButton.className = 'bbgf-button bbgf-toolbar-reset';
-			resetButton.dataset.role = 'bbgf-filter-reset';
-			resetButton.textContent = copy.filterAll;
-			filterWrapper.appendChild(resetButton);
-		}
-	}
-
-	if (filterWrapper && filterWrapper.childNodes.length) {
-		toolbar.appendChild(filterWrapper);
-	}
-
-	const controls = document.createElement('div');
-	controls.className = 'bbgf-toolbar-controls';
-
-	if (ui.showRefresh) {
-		const refreshButton = document.createElement('button');
-		refreshButton.type = 'button';
-		refreshButton.className = 'bbgf-refresh-button bbgf-button';
-		refreshButton.textContent = copy.refresh;
-		if (state.isLoading) {
-			refreshButton.setAttribute('disabled', 'disabled');
-			refreshButton.classList.add('is-disabled');
-		}
-		controls.appendChild(refreshButton);
-	}
-
-	if (ui.showLastUpdated) {
-		const lastUpdated = document.createElement('span');
-		lastUpdated.className = 'bbgf-last-updated';
-		lastUpdated.dataset.role = 'bbgf-last-updated';
-		lastUpdated.textContent = board.last_updated ? `${copy.lastUpdated} ${formatDateForLastUpdated(board.last_updated)}` : copy.lastUpdated;
-		controls.appendChild(lastUpdated);
-	}
-
-	if (ui.showCountdown) {
-		const refreshCountdown = document.createElement('span');
-		refreshCountdown.className = 'bbgf-next-refresh';
-		refreshCountdown.dataset.role = 'bbgf-next-refresh';
-		const countdownText = formatCountdownSeconds(state.nextRefreshAt);
-		refreshCountdown.textContent = countdownText ? `${copy.autoRefresh} ${countdownText}` : `${copy.autoRefresh} …`;
-		controls.appendChild(refreshCountdown);
-	}
-
-	if (ui.showFullscreen) {
-		const fullscreenToggle = document.createElement('button');
-		fullscreenToggle.type = 'button';
-		fullscreenToggle.className = 'bbgf-button bbgf-toolbar-fullscreen';
-		fullscreenToggle.dataset.role = 'bbgf-fullscreen-toggle';
-		fullscreenToggle.textContent = strings.fullscreen;
-		controls.appendChild(fullscreenToggle);
-	}
-
-	if (controls.childNodes.length) {
-		toolbar.appendChild(controls);
-	}
-
-	if (ui.showMaskBadge && board.visibility?.mask_guardian) {
-		const maskBadge = document.createElement('span');
-		maskBadge.className = 'bbgf-toolbar-badge';
-		maskBadge.textContent = copy.maskedGuardian;
-		toolbar.appendChild(maskBadge);
-	}
-
-	if (!toolbar.childNodes.length) {
-		return null;
-	}
-
-	return toolbar;
+const buildActionDock = (state, board, copy, ui) => {
+	return null;
 };
 
 const renderBoard = (state, root, config, copy) => {
@@ -1332,6 +1229,8 @@ const renderBoard = (state, root, config, copy) => {
 
 	const ui = resolvePresentationConfig(board);
 	currentPresentation = ui;
+
+	const preservedModal = root.querySelector('#bbgf-modal');
 
 	root.dataset.readonly = board.readonly ? 'true' : 'false';
 	root.dataset.isPublic = board.is_public ? 'true' : 'false';
@@ -1355,28 +1254,11 @@ const renderBoard = (state, root, config, copy) => {
 	root.innerHTML = '';
 	renderErrors(state, root, copy);
 
-	if (ui.mode === 'display') {
-		const controls = buildDisplayControls(ui);
-		if (controls) {
-			root.appendChild(controls);
-		}
-	} else {
-		const toolbar = buildInteractiveToolbar(state, board, config, copy, ui);
-		if (toolbar) {
-			root.appendChild(toolbar);
-		}
-	}
-
 	const columnsWrapper = document.createElement('div');
 	columnsWrapper.className = 'bbgf-board';
 	columnsWrapper.setAttribute('role', 'list');
 
-	const searchQuery = (state.filters?.query ?? '').trim().toLowerCase();
-	const selectedServices = ensureArray(state.filters?.services).map((value) => Number(value)).filter((value) => Number.isFinite(value));
-	const selectedFlags = ensureArray(state.filters?.flags).map((value) => Number(value)).filter((value) => Number.isFinite(value));
-	const searchActive = Boolean(searchQuery);
-	const allowFilters = ui.showSearch || ui.showFilters;
-	const filtersActive = allowFilters && (searchActive || selectedServices.length > 0 || selectedFlags.length > 0);
+	const filtersActive = false;
 	const baseStages = ensureArray(board.stages);
 
 	const filterVisit = (visit) => {
@@ -1384,47 +1266,13 @@ const renderBoard = (state, root, config, copy) => {
 			return false;
 		}
 
-		if (searchActive && !visitMatchesQuery(visit, searchQuery)) {
-			return false;
-		}
-
-		if (selectedServices.length) {
-			const visitServiceIds = ensureArray(visit.services)
-				.map((service) => Number(service?.id))
-				.filter((value) => Number.isFinite(value));
-			const serviceSet = new Set(visitServiceIds);
-			const matchesServices = selectedServices.every((id) => serviceSet.has(id));
-			if (!matchesServices) {
-				return false;
-			}
-		}
-
-		if (selectedFlags.length) {
-			const visitFlagIds = ensureArray(visit.flags)
-				.map((flag) => Number(flag?.id))
-				.filter((value) => Number.isFinite(value));
-			const flagSet = new Set(visitFlagIds);
-			const matchesFlags = selectedFlags.every((id) => flagSet.has(id));
-			if (!matchesFlags) {
-				return false;
-			}
-		}
-
 		return true;
 	};
 
-	const stages = baseStages.map((stage) => {
-		const visits = ensureArray(stage.visits);
-		if (!filtersActive) {
-			return { ...stage };
-		}
-
-		const filteredVisits = visits.filter(filterVisit);
-		return {
-			...stage,
-			visits: filteredVisits,
-		};
-	});
+	const stages = baseStages.map((stage) => ({
+		...stage,
+		visits: ensureArray(stage.visits).filter(filterVisit),
+	}));
 
 	root.dataset.searchActive = filtersActive ? 'true' : 'false';
 	if (!stages.length) {
@@ -1455,9 +1303,52 @@ const renderBoard = (state, root, config, copy) => {
 	}
 
 	root.appendChild(columnsWrapper);
+	startTimerTicker(root);
 
-	const existingModal = root.querySelector('#bbgf-modal');
-	if (!existingModal) {
+	const existingControls = root.querySelector('.bbgf-floating-controls');
+	if (!existingControls) {
+		const controls = document.createElement('div');
+		controls.className = 'bbgf-floating-controls';
+
+		if (settings.capabilities?.editVisits && currentPresentation.mode !== 'display') {
+			const intakeButton = document.createElement('button');
+			intakeButton.type = 'button';
+			intakeButton.className = 'bbgf-icon-button bbgf-intake-button';
+			intakeButton.dataset.role = 'bbgf-intake-open';
+			intakeButton.setAttribute('aria-label', strings.intakeTitle);
+			intakeButton.innerHTML = `<span aria-hidden="true">＋</span><span class="bbgf-intake-button__label">${escapeHtml(strings.checkIn)}</span>`;
+			controls.appendChild(intakeButton);
+		}
+
+		const refreshButton = document.createElement('button');
+		refreshButton.type = 'button';
+		refreshButton.className = 'bbgf-icon-button bbgf-refresh-button';
+		refreshButton.setAttribute('aria-label', copy.refresh);
+		refreshButton.textContent = '⟳';
+		if (state.isLoading) {
+			refreshButton.setAttribute('disabled', 'disabled');
+			refreshButton.classList.add('is-disabled');
+		}
+		controls.appendChild(refreshButton);
+
+		if (ui.showFullscreen) {
+			const fullscreenToggle = document.createElement('button');
+			fullscreenToggle.type = 'button';
+			fullscreenToggle.className = 'bbgf-icon-button bbgf-toolbar-fullscreen';
+			fullscreenToggle.dataset.role = 'bbgf-fullscreen-toggle';
+			fullscreenToggle.setAttribute('aria-label', copy.fullscreen);
+			fullscreenToggle.textContent = '⛶';
+			controls.appendChild(fullscreenToggle);
+		}
+
+		root.appendChild(controls);
+	}
+
+	const existingModal = preservedModal || root.querySelector('#bbgf-modal');
+	if (existingModal) {
+		// Preserve the existing modal DOM to avoid losing form state while the board re-renders.
+		root.appendChild(existingModal);
+	} else {
 		const modal = document.createElement('div');
 		modal.id = 'bbgf-modal';
 		modal.setAttribute('hidden', 'hidden');
@@ -1467,6 +1358,7 @@ const renderBoard = (state, root, config, copy) => {
 			<div class="bbgf-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="bbgf-modal-title">
 				<header class="bbgf-modal__header">
 					<h2 id="bbgf-modal-title" class="bbgf-modal__title">${copy.modalTitle}</h2>
+					<div class="bbgf-modal__nav" data-role="bbgf-modal-nav"></div>
 					<span class="bbgf-modal__badge" data-role="bbgf-modal-readonly" hidden>${copy.modalReadOnly}</span>
 					<button type="button" class="bbgf-button bbgf-modal-close" data-role="bbgf-modal-close">${copy.modalClose}</button>
 				</header>
@@ -1479,6 +1371,27 @@ const renderBoard = (state, root, config, copy) => {
 		root.appendChild(modal);
 	}
 
+	if (!root.querySelector('#bbgf-intake-modal')) {
+		const intakeModal = document.createElement('div');
+		intakeModal.id = 'bbgf-intake-modal';
+		intakeModal.setAttribute('hidden', 'hidden');
+		intakeModal.className = 'bbgf-modal bbgf-intake-modal';
+		intakeModal.innerHTML = `
+			<div class="bbgf-modal__backdrop" data-role="bbgf-intake-close"></div>
+			<div class="bbgf-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="bbgf-intake-title">
+				<header class="bbgf-modal__header">
+					<h2 id="bbgf-intake-title" class="bbgf-modal__title">${escapeHtml(strings.intakeTitle)}</h2>
+					<button type="button" class="bbgf-button bbgf-modal-close" data-role="bbgf-intake-close">${escapeHtml(strings.modalClose)}</button>
+				</header>
+				<div class="bbgf-modal__body bbgf-intake-body" data-role="bbgf-intake-body">
+					<p class="bbgf-modal__loading">${escapeHtml(strings.loading)}</p>
+				</div>
+				<div class="bbgf-modal__actions bbgf-intake-actions" data-role="bbgf-intake-actions"></div>
+			</div>
+		`.trim();
+		root.appendChild(intakeModal);
+	}
+
 	const lastUpdatedNode = root.querySelector('[data-role="bbgf-last-updated"]');
 	if (lastUpdatedNode) {
 		lastUpdatedNode.dataset.timestamp = safeString(board.last_updated ?? state.lastFetchedAt ?? '');
@@ -1486,29 +1399,29 @@ const renderBoard = (state, root, config, copy) => {
 };
 
 const handleToolbarSearchInput = (event) => {
-    const value = event.target.value ?? '';
-    setFilters({ query: value });
+	const value = event.target.value ?? '';
+	setFilters({ query: value });
 };
 
 const handleFilterChange = (event) => {
-    const role = event.target.dataset.role;
-    if (!role) {
-        return;
-    }
+	const role = event.target.dataset.role;
+	if (!role) {
+		return;
+	}
 
-    const selectedValues = Array.from(event.target.selectedOptions || [])
-        .map((option) => Number(option.value))
-        .filter((value) => Number.isFinite(value));
+	const selectedValues = Array.from(event.target.selectedOptions || [])
+		.map((option) => Number(option.value))
+		.filter((value) => Number.isFinite(value));
 
-    if (role === 'bbgf-filter-services') {
-        setFilters({ services: selectedValues });
-    } else if (role === 'bbgf-filter-flags') {
-        setFilters({ flags: selectedValues });
-    }
+	if (role === 'bbgf-filter-services') {
+		setFilters({ services: selectedValues });
+	} else if (role === 'bbgf-filter-flags') {
+		setFilters({ flags: selectedValues });
+	}
 };
 
 const handleFilterReset = () => {
-    setFilters({ query: '', services: [], flags: [] });
+	setFilters({ query: '', services: [], flags: [] });
 };
 
 const dismissError = () => {
@@ -1588,67 +1501,6 @@ const attachToolbarHandlers = (root) => {
 		refreshButton.dataset.bound = 'true';
 	}
 
-	const viewButtons = root.querySelectorAll('.bbgf-toolbar-view button[data-view]');
-	if (viewButtons.length) {
-		viewButtons.forEach((button) => {
-			if (button.dataset.bound === 'true') {
-				return;
-			}
-
-			button.addEventListener('click', () => {
-				const targetView = button.dataset.view;
-				if (!targetView || targetView === getActiveViewSlug(store.getState())) {
-					return;
-				}
-
-				store.setState({
-					viewOverride: targetView,
-				});
-
-				loadBoard({ reason: 'view-change', forceFull: true, targetView });
-			});
-			button.dataset.bound = 'true';
-		});
-	}
-
-	const viewSelect = root.querySelector('[data-role="bbgf-view-select"]');
-	if (viewSelect && viewSelect.dataset.bound !== 'true') {
-		viewSelect.addEventListener('change', () => {
-			const targetView = viewSelect.value;
-			if (!targetView || targetView === getActiveViewSlug(store.getState())) {
-				return;
-			}
-
-			store.setState({
-				viewOverride: targetView,
-			});
-
-			loadBoard({ reason: 'view-change', forceFull: true, targetView });
-		});
-		viewSelect.dataset.bound = 'true';
-	}
-
-	const searchInput = root.querySelector('[data-role="bbgf-toolbar-search"]');
-	if (searchInput && searchInput.dataset.bound !== 'true') {
-		searchInput.addEventListener('input', handleToolbarSearchInput);
-		searchInput.dataset.bound = 'true';
-	}
-
-	const filterSelects = root.querySelectorAll('[data-role="bbgf-filter-services"], [data-role="bbgf-filter-flags"]');
-	filterSelects.forEach((select) => {
-		if (select.dataset.bound === 'true') {
-			return;
-		}
-		select.addEventListener('change', handleFilterChange);
-		select.dataset.bound = 'true';
-	});
-
-	const resetButton = root.querySelector('[data-role="bbgf-filter-reset"]');
-	if (resetButton && resetButton.dataset.bound !== 'true') {
-		resetButton.addEventListener('click', handleFilterReset);
-		resetButton.dataset.bound = 'true';
-	}
-
 	fullscreenButton = root.querySelector('[data-role="bbgf-fullscreen-toggle"]') || fullscreenButton;
 	if (fullscreenButton && fullscreenButton.dataset.bound !== 'true') {
 		fullscreenButton.addEventListener('click', toggleFullscreen);
@@ -1669,64 +1521,13 @@ const updateToolbarStates = (root, state) => {
 		}
 	}
 
-	const viewButtons = root.querySelectorAll('.bbgf-toolbar-view button[data-view]');
-	if (viewButtons.length) {
-		const active = getActiveViewSlug(state);
-		viewButtons.forEach((button) => {
-			const isActive = button.dataset.view === active;
-			button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-			if (isActive) {
-				button.classList.add('bbgf-button--primary');
-				button.classList.remove('bbgf-button--ghost');
-			} else {
-				button.classList.remove('bbgf-button--primary');
-				button.classList.add('bbgf-button--ghost');
-			}
-		});
-	}
-
-	const viewSelect = root.querySelector('[data-role="bbgf-view-select"]');
-	if (viewSelect) {
-		const active = getActiveViewSlug(state);
-		if (viewSelect.value !== active) {
-			viewSelect.value = active;
-		}
-	}
-
-	const searchInput = root.querySelector('[data-role="bbgf-toolbar-search"]');
-	if (searchInput && document.activeElement !== searchInput) {
-		searchInput.value = state.filters?.query ?? '';
-	}
-
-	const serviceSelect = root.querySelector('[data-role="bbgf-filter-services"]');
-	if (serviceSelect) {
-		const selected = new Set((state.filters?.services || []).map((value) => String(value)));
-		Array.from(serviceSelect.options).forEach((option) => {
-			option.selected = selected.has(option.value);
-		});
-	}
-
-	const flagSelect = root.querySelector('[data-role="bbgf-filter-flags"]');
-	if (flagSelect) {
-		const selected = new Set((state.filters?.flags || []).map((value) => String(value)));
-		Array.from(flagSelect.options).forEach((option) => {
-			option.selected = selected.has(option.value);
-		});
-	}
-
-	const countdownNode = root.querySelector('[data-role="bbgf-next-refresh"]');
-	if (countdownNode) {
-		const countdown = formatCountdownSeconds(state.nextRefreshAt);
-		countdownNode.textContent = countdown ? `${strings.autoRefresh} ${countdown}` : `${strings.autoRefresh} …`;
-	}
-
 	fullscreenButton = root.querySelector('[data-role="bbgf-fullscreen-toggle"]') || fullscreenButton;
 	updateFullscreenButton();
 };
 
 const setupLastUpdatedTicker = (root) => {
-	const target = root.querySelector('[data-role="bbgf-last-updated"]');
-	if (!target) {
+	const targets = Array.from(root.querySelectorAll('[data-role="bbgf-last-updated"]'));
+	if (!targets.length) {
 		if (root._bbgfLastUpdatedInterval) {
 			window.clearInterval(root._bbgfLastUpdatedInterval);
 			root._bbgfLastUpdatedInterval = null;
@@ -1735,9 +1536,11 @@ const setupLastUpdatedTicker = (root) => {
 	}
 
 	const update = () => {
-		const base = target.dataset.timestamp;
-		const humanized = humanizeRelativeTime(base);
-		target.textContent = base ? `${strings.lastUpdated} ${humanized || formatDateForLastUpdated(base)}` : strings.lastUpdated;
+		targets.forEach((node) => {
+			const base = node.dataset.timestamp;
+			const humanized = humanizeRelativeTime(base);
+			node.textContent = base ? `${strings.lastUpdated} ${humanized || formatDateForLastUpdated(base)}` : strings.lastUpdated;
+		});
 
 		const refreshNode = root.querySelector('[data-role="bbgf-next-refresh"]');
 		if (refreshNode) {
@@ -1754,11 +1557,79 @@ const setupLastUpdatedTicker = (root) => {
 	root._bbgfLastUpdatedInterval = window.setInterval(update, 15000);
 };
 
+const startTimerTicker = (root) => {
+	// Timers are now server-driven and refreshed via polling; render once without intervals.
+	const timers = root.querySelectorAll('.bbgf-card-timer');
+	timers.forEach((node) => {
+		const total = Math.max(0, Number(node.dataset.baseSeconds ?? node.dataset.seconds ?? 0));
+		node.textContent = formatDuration(total);
+
+		const yellow = toNumber(node.dataset.yellow);
+		const red = toNumber(node.dataset.red);
+		const state = getTimerState(total, { yellow, red });
+		node.dataset.state = state;
+		const card = node.closest('.bbgf-card');
+		if (card) {
+			card.classList.remove('bbgf-card--timer-on-track', 'bbgf-card--timer-warning', 'bbgf-card--timer-critical');
+			card.classList.remove('bbgf-card--overdue', 'bbgf-card--capacity-warning');
+			card.classList.add(`bbgf-card--timer-${state}`);
+			if (state === 'critical') {
+				card.classList.add('bbgf-card--overdue');
+			} else if (state === 'warning') {
+				card.classList.add('bbgf-card--capacity-warning');
+			}
+		}
+	});
+};
+
 const announce = (message) => {
 	if (message && window.wp?.a11y?.speak) {
 		window.wp.a11y.speak(message, 'polite');
 	}
 };
+
+const resolveDefaultStageKey = (board) => {
+	const stages = ensureArray(board?.stages);
+	if (!stages.length) {
+		return '';
+	}
+	const raw = stages[0]?.key ?? stages[0]?.stage_key ?? stages[0]?.id ?? '';
+	return safeString(raw).toLowerCase();
+};
+
+const getDefaultIntakeState = (board) => ({
+	isOpen: false,
+	isSaving: false,
+	error: '',
+	activeTab: 'search',
+	searchQuery: '',
+	searchResults: [],
+	selected: null,
+	guardian: {
+		id: null,
+		first_name: '',
+		last_name: '',
+		email: '',
+		phone: '',
+		preferred_contact: '',
+		notes: '',
+	},
+	client: {
+		id: null,
+		name: '',
+		breed: '',
+		weight: '',
+		temperament: '',
+		notes: '',
+		guardian_id: null,
+	},
+	visit: {
+		view_id: board?.view?.id ?? null,
+		current_stage: resolveDefaultStageKey(board),
+		instructions: '',
+		public_notes: '',
+	},
+});
 
 const initialState = {
 	board: settings.initialBoard || null,
@@ -1793,7 +1664,9 @@ const initialState = {
 			services: [],
 		},
 		error: '',
+		pendingUploads: [],
 	},
+	intake: getDefaultIntakeState(settings.initialBoard || null),
 	catalog: {
 		services: {
 			items: [],
@@ -1813,6 +1686,16 @@ const setModalState = (updater) => {
 		return {
 			...state,
 			modal: modal,
+		};
+	});
+};
+
+const setIntakeState = (updater) => {
+	store.setState((state) => {
+		const intake = typeof updater === 'function' ? updater(state.intake, state) : { ...state.intake, ...updater };
+		return {
+			...state,
+			intake,
 		};
 	});
 };
@@ -1934,8 +1817,143 @@ const handleModalTabChange = (tabId) => {
 	}
 };
 
+const handleModalMove = async (direction) => {
+	const state = store.getState();
+	const { modal, board } = state;
+
+	if (!modal.visit || modal.isSaving || modal.readOnly || board?.readonly || !settings.capabilities?.moveStages) {
+		return;
+	}
+
+	const neighbors = getStageNeighbors(board, modal.visit.current_stage);
+	const target = direction === 'prev' ? neighbors.prev?.key : neighbors.next?.key;
+
+	if (!target || target === modal.visit.current_stage) {
+		return;
+	}
+
+	setModalState({ isSaving: true, error: '' });
+
+	try {
+		await moveVisitToStage(modal.visitId, target);
+		await openVisitModal(modal.visitId, { tab: modal.activeTab || 'summary' });
+	} catch (error) {
+		const message = error?.message || strings.errorFetching || strings.loadingError;
+		setModalState({ error: message });
+		announce(message);
+	} finally {
+		setModalState({ isSaving: false });
+	}
+};
+
 const refreshBoardAfterModalSave = () => {
 	loadBoard({ reason: 'modal-save', forceFull: true });
+};
+
+const handleModalPhotoUpload = async (button) => {
+	const container = button.closest('[data-role="bbgf-photo-upload"]');
+	const fileInput = container?.querySelector('[data-role="bbgf-photo-file"]');
+	const visibleCheckbox = container?.querySelector('[data-role="bbgf-photo-visible"]');
+	const { modal } = store.getState();
+	const files = ensureArray(modal.pendingUploads);
+	const visible = visibleCheckbox ? Boolean(visibleCheckbox.checked) : true;
+
+	if (!files.length || !modal.visitId) {
+		return;
+	}
+
+	setModalState({ isSaving: true, error: '' });
+
+	try {
+		for (const file of files) {
+			// eslint-disable-next-line no-await-in-loop
+			await api.addPhoto(modal.visitId, file, visible);
+		}
+		if (fileInput) {
+			fileInput.value = '';
+		}
+		setModalState((current) => ({
+			...current,
+			pendingUploads: [],
+		}));
+		await openVisitModal(modal.visitId, { tab: modal.activeTab || 'photos' });
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		const message = error?.message || strings.loadingError;
+		setModalState({ error: message });
+		announce(message);
+	} finally {
+		setModalState({ isSaving: false });
+	}
+};
+
+const handlePhotoVisibilityChange = async (photoId, visible) => {
+	const { modal } = store.getState();
+	if (!modal.visitId) {
+		return;
+	}
+
+	try {
+		setModalState({ isSaving: true, error: '' });
+		await api.updatePhoto(modal.visitId, photoId, { visible_to_guardian: visible });
+		await openVisitModal(modal.visitId, { tab: modal.activeTab || 'photos' });
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		const message = error?.message || strings.loadingError;
+		setModalState({ error: message });
+		announce(message);
+	} finally {
+		setModalState({ isSaving: false });
+	}
+};
+
+const setPhotoAsPrimary = async (photoId) => {
+	const { modal } = store.getState();
+	if (!modal.visitId) {
+		return;
+	}
+
+	try {
+		setModalState({ isSaving: true, error: '' });
+		await api.updatePhoto(modal.visitId, photoId, { is_primary: true });
+		await openVisitModal(modal.visitId, { tab: modal.activeTab || 'photos' });
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		const message = error?.message || strings.loadingError;
+		setModalState({ error: message });
+		announce(message);
+	} finally {
+		setModalState({ isSaving: false });
+	}
+};
+
+const openPhotoLightbox = (url) => {
+	if (!url) {
+		return;
+	}
+
+	const existing = document.querySelector('.bbgf-lightbox');
+	if (existing) {
+		existing.remove();
+	}
+
+	const lightbox = document.createElement('div');
+	lightbox.className = 'bbgf-lightbox';
+	lightbox.innerHTML = `
+		<div class="bbgf-lightbox__backdrop" data-role="bbgf-lightbox-close"></div>
+		<div class="bbgf-lightbox__body">
+			<button type="button" class="bbgf-button bbgf-lightbox__close" data-role="bbgf-lightbox-close">${escapeHtml(strings.modalClose)}</button>
+			<img src="${escapeHtml(url)}" alt="">
+		</div>
+	`;
+
+	lightbox.addEventListener('click', (event) => {
+		if (event.target.dataset.role === 'bbgf-lightbox-close') {
+			lightbox.remove();
+		}
+	});
+
+	document.body.appendChild(lightbox);
 };
 
 const saveModalNotes = async () => {
@@ -2029,13 +2047,8 @@ const handleModalSave = (section) => {
 };
 
 const getPollIntervalMs = () => {
-	const state = store.getState();
-	const viewInterval = toNumber(state.board?.view?.refresh_interval);
-	const configInterval = toNumber(settings.view?.refresh_interval);
-	const defaultInterval = toNumber(settings.pollInterval) ?? 30;
-	const seconds = viewInterval || configInterval || defaultInterval || 30;
-
-	return Math.max(5, seconds) * 1000;
+	// Fixed 30s polling for server-driven timers.
+	return 30 * 1000;
 };
 
 let pollTimer = null;
@@ -2045,6 +2058,13 @@ let currentDragHoverStage = '';
 let toastTimer = null;
 let fullscreenButton = null;
 let currentPresentation = { mode: 'interactive' };
+let lastBoardStateRef = null;
+let lastModalSnapshot = null;
+let lastIntakeSnapshot = null;
+let lastCatalogRef = null;
+let lastErrorsRef = null;
+let activeTouchDrag = null;
+let intakeSearchTimer = null;
 
 const updateFullscreenButton = () => {
 	if (!fullscreenButton) {
@@ -2052,7 +2072,8 @@ const updateFullscreenButton = () => {
 	}
 
 	const isFullscreen = Boolean(document.fullscreenElement);
-	fullscreenButton.textContent = isFullscreen ? strings.exitFullscreen : strings.fullscreen;
+	fullscreenButton.textContent = isFullscreen ? '⤢' : '⛶';
+	fullscreenButton.setAttribute('title', isFullscreen ? strings.exitFullscreen : strings.fullscreen);
 	fullscreenButton.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
 };
 
@@ -2237,6 +2258,13 @@ const handleBoardClick = (event) => {
 		return;
 	}
 
+	const intakeTrigger = event.target.closest('[data-role="bbgf-intake-open"]');
+	if (intakeTrigger) {
+		event.preventDefault();
+		openIntakeModal();
+		return;
+	}
+
 	const moveNext = event.target.closest('.bbgf-move-next');
 	if (moveNext) {
 		event.preventDefault();
@@ -2258,51 +2286,198 @@ const handleBoardClick = (event) => {
 			return;
 		}
 
-		const state = store.getState();
 		modalLastFocusedElement = card;
+		openVisitModal(visitId, { tab: 'summary' });
+	}
+};
 
-		const boardVisit = findVisitById(state.board, visitId)?.visit ?? null;
-		store.setState({
-			modal: {
-				isOpen: true,
-				visitId,
-				loading: true,
-				visit: boardVisit,
-				readOnly: state.board?.readonly || !settings.capabilities?.editVisits,
-				activeTab: 'summary',
-				isSaving: false,
-				form: buildModalFormFromVisit(boardVisit),
+const resetIntakeState = () => {
+	const board = store.getState().board;
+	setIntakeState({ ...getDefaultIntakeState(board), isOpen: false });
+};
+
+const openIntakeModal = () => {
+	if (!settings.capabilities?.editVisits) {
+		return;
+	}
+	const board = store.getState().board;
+	setIntakeState({ ...getDefaultIntakeState(board), isOpen: true, activeTab: 'search' });
+};
+
+const closeIntakeModal = () => {
+	setIntakeState((current) => ({
+		...current,
+		isOpen: false,
+		isSaving: false,
+		error: '',
+	}));
+};
+
+const applyIntakeSelection = (item) => {
+	const board = store.getState().board;
+	const defaults = getDefaultIntakeState(board);
+	const guardian = item.guardian || {};
+	const client = item.client || {};
+
+	setIntakeState((current) => ({
+		...current,
+		selected: item,
+		guardian: {
+			id: guardian.id ?? null,
+			first_name: guardian.first_name ?? '',
+			last_name: guardian.last_name ?? '',
+			email: guardian.email ?? '',
+			phone: guardian.phone_mobile ?? guardian.phone_alt ?? guardian.phone ?? '',
+			preferred_contact: guardian.preferred_contact ?? '',
+			notes: guardian.notes ?? '',
+		},
+		client: {
+			...current.client,
+			id: client.id ?? null,
+			name: client.name ?? '',
+			breed: client.breed ?? '',
+			weight: client.weight ?? '',
+			temperament: client.temperament ?? '',
+			notes: client.notes ?? '',
+			guardian_id: client.guardian_id ?? guardian.id ?? null,
+		},
+		visit: {
+			...current.visit,
+			view_id: current.visit.view_id ?? defaults.visit.view_id,
+			current_stage: current.visit.current_stage || defaults.visit.current_stage,
+		},
+		activeTab: 'guardian',
+	}));
+};
+
+const updateIntakeField = (section, field, value) => {
+	if (!section || !field) {
+		return;
+	}
+	setIntakeState((current) => ({
+		...current,
+		[section]: {
+			...(current[section] || {}),
+			[field]: value,
+		},
+	}));
+};
+
+const handleIntakeSearch = (term) => {
+	if (intakeSearchTimer) {
+		window.clearTimeout(intakeSearchTimer);
+	}
+
+	const trimmed = safeString(term || '').trim();
+
+	setIntakeState((current) => ({
+		...current,
+		searchQuery: term,
+		searchResults: trimmed.length < 2 ? [] : current.searchResults,
+	}));
+
+	if (trimmed.length < 2) {
+		return;
+	}
+
+	intakeSearchTimer = window.setTimeout(async () => {
+		try {
+			const results = await api.searchIntake(term);
+			setIntakeState((current) => ({
+				...current,
+				searchResults: results,
 				error: '',
-			},
-		});
+			}));
+		} catch (error) {
+			setIntakeState((current) => ({
+				...current,
+				error: error?.message || strings.loadingError,
+			}));
+		}
+	}, 200);
+};
 
-		ensureServicesCatalog();
+const handleIntakeSubmit = async () => {
+	const state = store.getState();
+	const board = state.board;
+	const intake = state.intake;
+	const guardian = intake.guardian || {};
+	const client = intake.client || {};
+	const visit = intake.visit || {};
 
-		api.fetchVisit(visitId, {
-			view: getActiveViewSlug(store.getState()),
-		})
-			.then((visit) => {
-				store.setState((prev) => ({
-					modal: {
-						...prev.modal,
-						loading: false,
-						visit,
-						form: buildModalFormFromVisit(visit),
-						error: '',
-					},
-				}));
-			})
-			.catch((error) => {
-				store.setState((prev) => ({
-					errors: [...ensureArray(prev.errors), error?.message || strings.loadingError],
-					modal: {
-						...prev.modal,
-						loading: false,
-						error: error?.message || strings.loadingError,
-					},
-				}));
-			});
- 	}
+	const guardianFirst = safeString(guardian.first_name || '');
+	const guardianLast = safeString(guardian.last_name || '');
+	const clientName = safeString(client.name || '');
+	const stageKey = safeString(visit.current_stage || resolveDefaultStageKey(board));
+	const viewId = Number(visit.view_id || board?.view?.id || 0) || null;
+
+	if (!guardianFirst || !guardianLast) {
+		setIntakeState((current) => ({ ...current, error: 'Guardian first and last name are required.' }));
+		return;
+	}
+
+	if (!clientName) {
+		setIntakeState((current) => ({ ...current, error: 'Client name is required.' }));
+		return;
+	}
+
+	if (!stageKey) {
+		setIntakeState((current) => ({ ...current, error: strings.stageLabel || 'Stage is required.' }));
+		return;
+	}
+
+	setIntakeState((current) => ({ ...current, isSaving: true, error: '' }));
+
+	const guardianPayload = {
+		id: guardian.id ?? intake.selected?.guardian?.id ?? null,
+		first_name: guardianFirst,
+		last_name: guardianLast,
+		email: safeString(guardian.email || ''),
+		phone: safeString(guardian.phone || guardian.phone_mobile || ''),
+		preferred_contact: safeString(guardian.preferred_contact || ''),
+		notes: safeString(guardian.notes || ''),
+	};
+
+	const weightValue = safeString(client.weight || '');
+	const clientPayload = {
+		id: client.id ?? intake.selected?.client?.id ?? null,
+		name: clientName,
+		breed: safeString(client.breed || ''),
+		weight: weightValue,
+		temperament: safeString(client.temperament || ''),
+		notes: safeString(client.notes || ''),
+		guardian_id: client.guardian_id ?? guardianPayload.id ?? null,
+	};
+
+	const payload = {
+		current_stage: stageKey,
+		view_id: viewId,
+		status: 'in_progress',
+		check_in_at: new Date().toISOString(),
+		instructions: safeString(visit.instructions || ''),
+		public_notes: safeString(visit.public_notes || ''),
+		client: clientPayload,
+		guardian: guardianPayload,
+	};
+
+	try {
+		await api.createVisit(payload);
+		announce(strings.intakeSuccess);
+		resetIntakeState();
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		setIntakeState((current) => ({
+			...current,
+			isSaving: false,
+			error: error?.message || strings.loadingError,
+		}));
+		return;
+	}
+
+	setIntakeState((current) => ({
+		...getDefaultIntakeState(board),
+		isOpen: false,
+	}));
 };
 
 const closeModal = () => {
@@ -2316,6 +2491,11 @@ const closeModal = () => {
 
 const handleModalContainerClick = (event) => {
 	const role = event.target.dataset.role;
+	if (role === 'bbgf-modal-close') {
+		closeModal();
+		return;
+	}
+
 	if (role === 'bbgf-modal-tab') {
 		const tab = event.target.dataset.tab;
 		if (tab) {
@@ -2328,6 +2508,57 @@ const handleModalContainerClick = (event) => {
 		const section = event.target.dataset.section;
 		if (section) {
 			handleModalSave(section);
+		}
+		return;
+	}
+
+	if (role === 'bbgf-modal-move') {
+		const direction = event.target.dataset.direction;
+		if (direction) {
+			handleModalMove(direction);
+		}
+		return;
+	}
+
+	if (role === 'bbgf-upload-photo') {
+		handleModalPhotoUpload(event.target);
+		return;
+	}
+
+	if (role === 'bbgf-photo-primary') {
+		const photoId = Number(event.target.dataset.photoId);
+		if (!Number.isNaN(photoId)) {
+			setPhotoAsPrimary(photoId);
+		}
+		return;
+	}
+
+	if (role === 'bbgf-photo-cancel') {
+		const upload = event.target.closest('[data-role="bbgf-photo-upload"]');
+		const fileInput = upload?.querySelector('[data-role="bbgf-photo-file"]');
+		if (fileInput) {
+			fileInput.value = '';
+		}
+		setModalState((modal) => ({
+			...modal,
+			pendingUploads: [],
+		}));
+		return;
+	}
+
+	if (event.target.closest('[data-role="bbgf-photo-visibility"]')) {
+		return;
+	}
+
+	if (event.target.closest('[data-role="bbgf-photo-file"]')) {
+		return;
+	}
+
+	const preview = event.target.closest('[data-role="bbgf-photo-preview"]');
+	if (preview) {
+		const url = preview.dataset?.photoUrl;
+		if (url) {
+			openPhotoLightbox(url);
 		}
 	}
 };
@@ -2349,6 +2580,74 @@ const handleModalContainerChange = (event) => {
 		if (!Number.isNaN(serviceId)) {
 			toggleModalService(serviceId, checked);
 		}
+	}
+
+	if (dataset?.role === 'bbgf-photo-visibility') {
+		event.stopPropagation();
+		const photoId = Number(dataset.photoId);
+		if (!Number.isNaN(photoId)) {
+			handlePhotoVisibilityChange(photoId, checked);
+		}
+	}
+
+	if (dataset?.role === 'bbgf-photo-file') {
+		const files = event.target.files ? Array.from(event.target.files) : [];
+		setModalState((modal) => ({
+			...modal,
+			pendingUploads: files,
+		}));
+	}
+};
+
+const openVisitModal = async (visitId, options = {}) => {
+	if (!Number.isFinite(Number(visitId))) {
+		return;
+	}
+
+	const state = store.getState();
+	const boardVisit = findVisitById(state.board, visitId)?.visit ?? null;
+	const nextTab = options.tab || 'summary';
+
+	store.setState({
+		modal: {
+			isOpen: true,
+			visitId,
+			loading: true,
+			visit: boardVisit,
+			readOnly: state.board?.readonly || !settings.capabilities?.editVisits,
+			activeTab: nextTab,
+			isSaving: false,
+			form: buildModalFormFromVisit(boardVisit),
+			error: '',
+			pendingUploads: [],
+		},
+	});
+
+	ensureServicesCatalog();
+
+	try {
+		const visit = await api.fetchVisit(visitId, {
+			view: getActiveViewSlug(store.getState()),
+		});
+
+		store.setState((prev) => ({
+			modal: {
+				...prev.modal,
+				loading: false,
+				visit,
+				form: buildModalFormFromVisit(visit),
+				error: '',
+			},
+		}));
+	} catch (error) {
+		store.setState((prev) => ({
+			errors: [...ensureArray(prev.errors), error?.message || strings.loadingError],
+			modal: {
+				...prev.modal,
+				loading: false,
+				error: error?.message || strings.loadingError,
+			},
+		}));
 	}
 };
 
@@ -2486,13 +2785,70 @@ const handleDrop = (event) => {
 	}
 };
 
-const handleModalEvents = (root) => {
-	if (root.dataset.bbgfModalBound === 'true') {
+const getTouchTargetColumn = (touchEvent) => {
+	const point = touchEvent.changedTouches?.[0];
+	if (!point) {
+		return null;
+	}
+	const element = document.elementFromPoint(point.clientX, point.clientY);
+	return element ? element.closest('.bbgf-column') : null;
+};
+
+const handleTouchStart = (event) => {
+	if (!settings.capabilities?.moveStages) {
 		return;
 	}
 
-	const backdrop = root.querySelector('[data-role="bbgf-modal-backdrop"]');
-	const closeButton = root.querySelector('[data-role="bbgf-modal-close"]');
+	const card = event.target.closest('.bbgf-card');
+	if (!card) {
+		return;
+	}
+
+	const visitId = Number(card.dataset.visitId);
+	const fromStage = safeString(card.dataset.stage);
+	if (Number.isNaN(visitId) || !fromStage) {
+		return;
+	}
+
+	activeTouchDrag = { visitId, fromStage };
+	highlightColumn(null);
+};
+
+const handleTouchMove = (event) => {
+	if (!activeTouchDrag) {
+		return;
+	}
+	event.preventDefault();
+	const column = getTouchTargetColumn(event);
+	if (column) {
+		const stageKey = safeString(column.dataset.stage);
+		if (stageKey && stageKey !== activeTouchDrag.fromStage) {
+			highlightColumn(stageKey);
+		}
+	}
+};
+
+const handleTouchEnd = (event) => {
+	if (!activeTouchDrag) {
+		return;
+	}
+	const column = getTouchTargetColumn(event);
+	const targetStage = safeString(column?.dataset.stage ?? '');
+	if (targetStage && targetStage !== activeTouchDrag.fromStage) {
+		moveVisitToStage(activeTouchDrag.visitId, targetStage);
+	}
+	highlightColumn(null);
+	activeTouchDrag = null;
+};
+
+const handleModalEvents = (root) => {
+	const container = root.querySelector('#bbgf-modal');
+	if (!container || container.dataset.bound === 'true') {
+		return;
+	}
+
+	const backdrop = container.querySelector('[data-role="bbgf-modal-backdrop"]');
+	const closeButton = container.querySelector('[data-role="bbgf-modal-close"]');
 
 	if (backdrop) {
 		backdrop.addEventListener('click', closeModal);
@@ -2512,14 +2868,14 @@ const handleModalEvents = (root) => {
 		}
 	});
 
-	const dialog = root.querySelector('.bbgf-modal__dialog');
+	const dialog = container.querySelector('.bbgf-modal__dialog');
 	if (dialog) {
 		dialog.addEventListener('click', handleModalContainerClick);
 		dialog.addEventListener('input', handleModalContainerInput, true);
 		dialog.addEventListener('change', handleModalContainerChange);
 	}
 
-	root.dataset.bbgfModalBound = 'true';
+	container.dataset.bound = 'true';
 };
 
 const renderModal = (state, root, copy) => {
@@ -2545,24 +2901,49 @@ const renderModal = (state, root, copy) => {
 	const tabsNav = container.querySelector('[data-role="bbgf-modal-tabs"]');
 	const title = container.querySelector('#bbgf-modal-title');
 	const closeButton = container.querySelector('[data-role="bbgf-modal-close"]');
+	const nav = container.querySelector('[data-role="bbgf-modal-nav"]');
 
 	const tabs = [
 		{ id: 'summary', label: copy.modalSummary },
 		{ id: 'notes', label: copy.modalNotes },
 		{ id: 'services', label: copy.modalServices },
+		{ id: 'visit', label: copy.modalVisit },
 		{ id: 'history', label: copy.modalHistory },
 		{ id: 'photos', label: copy.modalPhotos },
 	];
 
 	if (tabsNav) {
 		tabsNav.innerHTML = tabs
-			.map(
-				(tab) =>
-					`<button type="button" class="bbgf-modal__tab${modal.activeTab === tab.id ? ' is-active' : ''}" data-role="bbgf-modal-tab" data-tab="${tab.id}">${escapeHtml(
-						tab.label
-					)}</button>`
-			)
+			.map((tab) => {
+				const isActive = modal.activeTab === tab.id;
+				return `<button type="button" class="bbgf-modal__tab${isActive ? ' is-active' : ''}" data-role="bbgf-modal-tab" data-tab="${tab.id}" aria-selected="${isActive ? 'true' : 'false'}">${escapeHtml(
+					tab.label
+				)}</button>`;
+			})
 			.join('');
+	}
+
+	if (nav) {
+		if (modal.visit && settings.capabilities?.moveStages && !state.board?.readonly && !modal.readOnly) {
+			const neighbors = getStageNeighbors(state.board, modal.visit.current_stage);
+			const stageLabel =
+				ensureArray(state.board?.stages).find((stage) => stage.key === modal.visit.current_stage)?.label ?? modal.visit.current_stage;
+			const prevButton = neighbors.prev
+				? `<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-modal-move" data-direction="prev">${escapeHtml(copy.movePrev)}</button>`
+				: '';
+			const nextButton = neighbors.next
+				? `<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-modal-move" data-direction="next">${escapeHtml(copy.moveNext)}</button>`
+				: '';
+			nav.innerHTML = `
+				${prevButton}
+				${nextButton}
+				<div class="bbgf-modal__nav-info">
+					<span>${escapeHtml(stageLabel || copy.stageLabel)}</span>
+				</div>
+			`;
+		} else {
+			nav.innerHTML = '';
+		}
 	}
 
 	let contentHtml = `<p class="bbgf-modal__loading">${copy.modalLoading}</p>`;
@@ -2727,7 +3108,7 @@ const renderModal = (state, root, copy) => {
 					${modal.readOnly ? '' : `<div class="bbgf-modal__actions"><button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-modal-save" data-section="services" ${modal.isSaving ? 'disabled' : ''}>${escapeHtml(modal.isSaving ? copy.modalSaving : copy.modalSave)}</button></div>`}
 				`;
 			}
-		} else if (modal.activeTab === 'history') {
+		} else if (modal.activeTab === 'visit') {
 			const historyItems = ensureArray(visit.history)
 				.map((entry) => {
 					const when = formatDateTime(entry.changed_at);
@@ -2753,13 +3134,68 @@ const renderModal = (state, root, copy) => {
 					${historyItems || `<li>${escapeHtml(copy.modalNoHistory)}</li>`}
 				</ul>
 			`;
+		} else if (modal.activeTab === 'history') {
+			const previousItems = ensureArray(visit.previous_visits)
+				.map((entry) => {
+					const when = formatDateTime(entry.check_in_at || entry.created_at);
+					const stage = escapeHtml(entry.stage ?? '');
+					const instructions = escapeHtml(entry.instructions ?? '').replace(/\n/g, '<br>');
+					const publicNotes = escapeHtml(entry.public_notes ?? '').replace(/\n/g, '<br>');
+					const privateNotes = escapeHtml(entry.private_notes ?? '').replace(/\n/g, '<br>');
+
+					return `
+						<li>
+							<div class="bbgf-history-entry">
+								<strong>${when || copy.modalHistory}</strong>
+								${stage ? `<p>${stage}</p>` : ''}
+								${instructions ? `<p class="bbgf-history-duration">${instructions}</p>` : ''}
+								${publicNotes ? `<p>${publicNotes}</p>` : ''}
+								${privateNotes ? `<p><em>${privateNotes}</em></p>` : ''}
+							</div>
+						</li>
+					`;
+				})
+				.join('');
+
+			contentHtml = `
+				<ul class="bbgf-modal-history">
+					${previousItems || `<li>${escapeHtml(copy.modalNoPrevious)}</li>`}
+				</ul>
+			`;
 		} else if (modal.activeTab === 'photos') {
 			const photos = ensureArray(visit.photos);
+			const pendingUploads = ensureArray(modal.pendingUploads);
+			const pendingList = pendingUploads.length
+				? `<ul class="bbgf-photo-upload__list">${pendingUploads
+						.map((file) => `<li>${escapeHtml(file.name || 'Untitled file')}</li>`)
+						.join('')}</ul>`
+				: `<p class="bbgf-photo-upload__hint">${escapeHtml('Select images to preview filenames before uploading.')}</p>`;
 			let photoItems = photos
 				.map((photo) => {
 					const url = escapeHtml(photo.url ?? '');
 					const alt = escapeHtml(photo.alt ?? clientName);
-					return `<figure class="bbgf-modal-photo"><img src="${url}" alt="${alt}"><figcaption>${alt}</figcaption></figure>`;
+					const visible = photo.visible_to_guardian !== false;
+					const photoId = Number(photo.id);
+					const isPrimary = photo.is_primary === true;
+					const visibilityToggle =
+						settings.capabilities?.editVisits && !state.board?.readonly && !modal.readOnly && Number.isFinite(photoId)
+							? `<label class="bbgf-photo-visibility"><input type="checkbox" data-role="bbgf-photo-visibility" data-photo-id="${photoId}" ${visible ? 'checked' : ''}>${escapeHtml(copy.modalVisibleToGuardian)}</label>`
+							: '';
+					const primaryAction =
+						settings.capabilities?.editVisits && !state.board?.readonly && !modal.readOnly && Number.isFinite(photoId)
+							? `<button type="button" class="bbgf-button bbgf-button--ghost bbgf-photo-primary" data-role="bbgf-photo-primary" data-photo-id="${photoId}" ${isPrimary ? 'disabled' : ''}>${escapeHtml(
+									isPrimary ? 'Main photo' : 'Set as main photo'
+							  )}</button>`
+							: '';
+
+					return `<figure class="bbgf-modal-photo" data-role="bbgf-photo-preview" data-photo-id="${photoId}" data-photo-url="${url}" aria-label="${escapeHtml(copy.modalViewPhoto)}">
+						<div class="bbgf-modal-photo__thumb">
+							<img src="${url}" alt="${alt}">
+							${isPrimary ? '<span class="bbgf-photo-badge bbgf-photo-badge--primary">Main</span>' : ''}
+							${visible ? '' : '<span class="bbgf-photo-badge">Hidden</span>'}
+						</div>
+						<figcaption>${alt}${visibilityToggle || primaryAction ? `<div class="bbgf-photo-actions">${primaryAction}${visibilityToggle}</div>` : ''}</figcaption>
+					</figure>`;
 				})
 				.join('');
 
@@ -2771,10 +3207,38 @@ const renderModal = (state, root, copy) => {
 				}
 			}
 
+			const photosFooter = `
+				<div class="bbgf-modal__actions bbgf-modal__actions--photos">
+					<span class="bbgf-modal__hint">Changes save automatically.</span>
+					<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-modal-close">${escapeHtml(copy.modalClose)}</button>
+				</div>
+			`;
+
 			contentHtml = `
+				${settings.capabilities?.editVisits && !state.board?.readonly && !modal.readOnly ? `
+				<div class="bbgf-photo-upload" data-role="bbgf-photo-upload">
+					<label class="bbgf-photo-upload__file">
+						<input type="file" accept="image/*" data-role="bbgf-photo-file" multiple>
+						<span>${escapeHtml(copy.modalUploadPhoto)}</span>
+					</label>
+					<label class="bbgf-photo-upload__visibility">
+						<input type="checkbox" data-role="bbgf-photo-visible" checked>
+						<span>${escapeHtml(copy.modalVisibleToGuardian)}</span>
+					</label>
+					<div class="bbgf-photo-upload__pending">
+						${pendingList}
+					</div>
+					<div class="bbgf-photo-upload__actions">
+						<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-photo-cancel" ${pendingUploads.length ? '' : 'disabled'}>Clear</button>
+						<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-upload-photo" ${pendingUploads.length ? '' : 'disabled'}>${escapeHtml(
+							pendingUploads.length ? `Upload ${pendingUploads.length} file${pendingUploads.length === 1 ? '' : 's'}` : copy.modalUploadPhoto
+						)}</button>
+					</div>
+				</div>` : ''}
 				<div class="bbgf-modal-photos">
 					${photoItems || `<p class="bbgf-modal__loading">${escapeHtml(copy.modalNoPhotos)}</p>`}
 				</div>
+				${photosFooter}
 			`;
 		}
 
@@ -2837,6 +3301,325 @@ const renderModal = (state, root, copy) => {
 	}
 };
 
+const renderIntakeModal = (state, root, copy) => {
+	const container = root.querySelector('#bbgf-intake-modal');
+	if (!container) {
+		return;
+	}
+
+	const { intake, board } = state;
+	if (!intake.isOpen) {
+		container.setAttribute('hidden', 'hidden');
+		return;
+	}
+
+	container.removeAttribute('hidden');
+
+	const body = container.querySelector('[data-role="bbgf-intake-body"]');
+	const actions = container.querySelector('[data-role="bbgf-intake-actions"]');
+	if (!body || !actions) {
+		return;
+	}
+
+	const stages = ensureArray(board?.stages);
+	const views = ensureArray(settings.views);
+	const selectedViewId = intake.visit.view_id ?? board?.view?.id ?? null;
+	const stageOptions = stages
+		.map((stage) => {
+			const key = safeString(stage.key ?? stage.stage_key ?? '');
+			const label = safeString(stage.label ?? key);
+			const selected = intake.visit.current_stage === key ? 'selected' : '';
+			return `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}</option>`;
+		})
+		.join('');
+	const viewOptions = views
+		.map((view) => {
+			const id = Number(view.id);
+			const selected = id === Number(selectedViewId) ? 'selected' : '';
+			return `<option value="${id}" ${selected}>${escapeHtml(view.name ?? view.slug ?? id)}</option>`;
+		})
+		.join('');
+
+	const results = ensureArray(intake.searchResults);
+	const resultItems = results
+		.map((item, index) => {
+			const client = item.client || {};
+			const guardian = item.guardian || {};
+			const clientName = safeString(client.name || '');
+			const guardianName =
+				guardian && (guardian.first_name || guardian.last_name)
+					? `${safeString(guardian.first_name)} ${safeString(guardian.last_name)}`.trim()
+					: '';
+			const contactPieces = [guardian.phone_mobile || guardian.phone_alt || '', guardian.email || ''].filter(Boolean);
+			const meta = [client.breed || '', guardianName].filter(Boolean).join(' • ');
+			const contact = contactPieces.join(' • ');
+			return `
+				<article class="bbgf-intake-result">
+					<div class="bbgf-intake-result__body">
+						<p class="bbgf-intake-result__title">${escapeHtml(clientName || copy.unknownClient)}</p>
+						${meta ? `<p class="bbgf-intake-result__meta">${escapeHtml(meta)}</p>` : ''}
+						${contact ? `<p class="bbgf-intake-result__contact">${escapeHtml(contact)}</p>` : ''}
+					</div>
+					<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-intake-select" data-result-index="${index}">${escapeHtml(
+						copy.checkIn
+					)}</button>
+				</article>
+			`;
+		})
+		.join('');
+
+	const guardian = intake.guardian || {};
+	const client = intake.client || {};
+	const visit = intake.visit || {};
+	const trimmedQuery = safeString(intake.searchQuery || '').trim();
+	const searchReady = trimmedQuery.length >= 2;
+	const tabs = [
+		{ id: 'search', label: copy.intakeSearchLabel },
+		{ id: 'guardian', label: copy.intakeGuardian },
+		{ id: 'client', label: copy.intakeClient },
+		{ id: 'visit', label: copy.intakeVisit },
+	];
+	const activeTab = tabs.some((tab) => tab.id === intake.activeTab) ? intake.activeTab : 'search';
+	const tabsHtml = tabs
+		.map((tab) => {
+			const isActive = tab.id === activeTab;
+			return `<button type="button" class="bbgf-modal__tab${isActive ? ' is-active' : ''}" data-role="bbgf-intake-tab" data-tab="${tab.id}" aria-selected="${isActive ? 'true' : 'false'}">${escapeHtml(
+				tab.label
+			)}</button>`;
+		})
+		.join('');
+
+	const selectedBadge = intake.selected
+		? `<div class="bbgf-intake-selected">Using ${escapeHtml(intake.selected.client?.name ?? copy.unknownClient)}${
+				intake.selected.guardian ? ` • ${escapeHtml(intake.selected.guardian?.first_name ?? '')} ${escapeHtml(intake.selected.guardian?.last_name ?? '')}` : ''
+		  } <button type="button" class="bbgf-chip-clear" data-role="bbgf-intake-clear" aria-label="${escapeHtml(copy.clearFilters || 'Clear')}">×</button></div>`
+		: '';
+
+	const resultsBlock = searchReady
+		? resultItems || `<p class="bbgf-modal__loading">${escapeHtml(copy.intakeNoResults)}</p>`
+		: `<p class="bbgf-modal__hint">${escapeHtml('Start typing at least 2 characters to search.')}</p>`;
+
+	const searchPanel = `
+		<section class="bbgf-intake-panel bbgf-intake-panel--search" role="tabpanel" aria-label="${escapeHtml(copy.intakeSearchLabel)}">
+			<label class="bbgf-field-label">${escapeHtml(copy.intakeSearchLabel)}</label>
+			<div class="bbgf-intake-search">
+				<input type="search" data-role="bbgf-intake-search" value="${escapeHtml(intake.searchQuery)}" placeholder="${escapeHtml(copy.intakeSearchHint)}" aria-label="${escapeHtml(
+		copy.intakeSearchLabel
+	)}">
+			</div>
+			<div class="bbgf-intake-results">
+				${resultsBlock}
+			</div>
+		</section>
+	`;
+
+	const guardianPanel = `
+		<section class="bbgf-intake-panel" role="tabpanel" aria-label="${escapeHtml(copy.intakeGuardian)}">
+			<h3>${escapeHtml(copy.intakeGuardian)}</h3>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('First name')}</label>
+				<input type="text" data-role="bbgf-intake-field" data-section="guardian" data-field="first_name" value="${escapeHtml(guardian.first_name ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Last name')}</label>
+				<input type="text" data-role="bbgf-intake-field" data-section="guardian" data-field="last_name" value="${escapeHtml(guardian.last_name ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Email')}</label>
+				<input type="email" data-role="bbgf-intake-field" data-section="guardian" data-field="email" value="${escapeHtml(guardian.email ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Mobile')}</label>
+				<input type="tel" data-role="bbgf-intake-field" data-section="guardian" data-field="phone" value="${escapeHtml(guardian.phone ?? guardian.phone_mobile ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Preferred contact')}</label>
+				<select data-role="bbgf-intake-field" data-section="guardian" data-field="preferred_contact">
+					${['', 'email', 'phone_mobile', 'sms']
+						.map((option) => {
+							const selected = safeString(option) === safeString(guardian.preferred_contact ?? '') ? 'selected' : '';
+							const label = option ? option.replace('_', ' ') : 'None';
+							return `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(label)}</option>`;
+						})
+						.join('')}
+				</select>
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Notes')}</label>
+				<textarea data-role="bbgf-intake-field" data-section="guardian" data-field="notes">${escapeHtml(guardian.notes ?? '')}</textarea>
+			</div>
+		</section>
+	`;
+
+	const clientPanel = `
+		<section class="bbgf-intake-panel" role="tabpanel" aria-label="${escapeHtml(copy.intakeClient)}">
+			<h3>${escapeHtml(copy.intakeClient)}</h3>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Name')}</label>
+				<input type="text" data-role="bbgf-intake-field" data-section="client" data-field="name" value="${escapeHtml(client.name ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Breed')}</label>
+				<input type="text" data-role="bbgf-intake-field" data-section="client" data-field="breed" value="${escapeHtml(client.breed ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Weight')}</label>
+				<input type="text" inputmode="decimal" data-role="bbgf-intake-field" data-section="client" data-field="weight" value="${escapeHtml(client.weight ?? '')}" placeholder="lbs">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Temperament')}</label>
+				<input type="text" data-role="bbgf-intake-field" data-section="client" data-field="temperament" value="${escapeHtml(client.temperament ?? '')}">
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml(copy.notes)}</label>
+				<textarea data-role="bbgf-intake-field" data-section="client" data-field="notes">${escapeHtml(client.notes ?? '')}</textarea>
+			</div>
+		</section>
+	`;
+
+	const visitPanel = `
+		<section class="bbgf-intake-panel" role="tabpanel" aria-label="${escapeHtml(copy.intakeVisit)}">
+			<h3>${escapeHtml(copy.intakeVisit)}</h3>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml(copy.stageLabel)}</label>
+				<select data-role="bbgf-intake-field" data-section="visit" data-field="current_stage">
+					${stageOptions || `<option value="">${escapeHtml(copy.stageLabel)}</option>`}
+				</select>
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml(copy.viewSwitcher)}</label>
+				<select data-role="bbgf-intake-field" data-section="visit" data-field="view_id">
+					${viewOptions || `<option value="">${escapeHtml(copy.viewSwitcher)}</option>`}
+				</select>
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Instructions')}</label>
+				<textarea data-role="bbgf-intake-field" data-section="visit" data-field="instructions">${escapeHtml(visit.instructions ?? '')}</textarea>
+			</div>
+			<div class="bbgf-intake-field">
+				<label>${escapeHtml('Public notes')}</label>
+				<textarea data-role="bbgf-intake-field" data-section="visit" data-field="public_notes">${escapeHtml(visit.public_notes ?? '')}</textarea>
+			</div>
+		</section>
+	`;
+
+	const panels = {
+		search: searchPanel,
+		guardian: guardianPanel,
+		client: clientPanel,
+		visit: visitPanel,
+	};
+
+	body.innerHTML = `
+		<div class="bbgf-modal__tabs bbgf-intake-tabs" role="tablist">
+			${tabsHtml}
+		</div>
+		${selectedBadge ? `<div class="bbgf-intake-selected-wrap">${selectedBadge}</div>` : ''}
+		<div class="bbgf-intake-panel-wrap" id="bbgf-intake-panel-${escapeHtml(activeTab)}">
+			${panels[activeTab] ?? ''}
+		</div>
+	`;
+
+	actions.innerHTML = `
+		${intake.error ? `<div class="bbgf-modal__error">${escapeHtml(intake.error)}</div>` : ''}
+		<div class="bbgf-modal__actions">
+			<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-intake-close" ${intake.isSaving ? 'disabled' : ''}>${escapeHtml(copy.modalClose)}</button>
+			<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-intake-submit" ${intake.isSaving ? 'disabled' : ''}>${escapeHtml(
+		intake.isSaving ? copy.intakeSaving : copy.intakeSubmit
+	)}</button>
+		</div>
+	`;
+};
+
+const handleIntakeClick = (event) => {
+	const role = event.target.dataset?.role;
+	if (role === 'bbgf-intake-tab') {
+		const tab = safeString(event.target.dataset.tab);
+		const allowedTabs = ['search', 'guardian', 'client', 'visit'];
+		const nextTab = allowedTabs.includes(tab) ? tab : 'search';
+		setIntakeState((current) => ({
+			...current,
+			activeTab: nextTab,
+		}));
+		return;
+	}
+
+	if (role === 'bbgf-intake-close') {
+		closeIntakeModal();
+		return;
+	}
+
+	if (role === 'bbgf-intake-select') {
+		const index = Number(event.target.dataset.resultIndex);
+		const results = store.getState().intake.searchResults || [];
+		const selected = Number.isInteger(index) ? results[index] : null;
+		if (selected) {
+			applyIntakeSelection(selected);
+		}
+		return;
+	}
+
+	if (role === 'bbgf-intake-clear') {
+		setIntakeState((current) => ({
+			...current,
+			selected: null,
+			client: { ...(current.client || {}), id: null, guardian_id: null },
+			guardian: { ...(current.guardian || {}), id: null },
+		}));
+		return;
+	}
+
+	if (role === 'bbgf-intake-submit') {
+		handleIntakeSubmit();
+	}
+};
+
+const handleIntakeInput = (event) => {
+	const role = event.target.dataset?.role;
+	if (role === 'bbgf-intake-search') {
+		handleIntakeSearch(event.target.value || '');
+		return;
+	}
+
+	if (role === 'bbgf-intake-field') {
+		const section = event.target.dataset.section;
+		const field = event.target.dataset.field;
+		updateIntakeField(section, field, event.target.value);
+	}
+};
+
+const handleIntakeChange = (event) => {
+	const role = event.target.dataset?.role;
+	if (role === 'bbgf-intake-field') {
+		const section = event.target.dataset.section;
+		const field = event.target.dataset.field;
+		updateIntakeField(section, field, event.target.value);
+	}
+};
+
+const handleIntakeEvents = (root) => {
+	const container = root.querySelector('#bbgf-intake-modal');
+	if (!container || container.dataset.bound === 'true') {
+		return;
+	}
+
+	container.addEventListener('click', handleIntakeClick);
+	container.addEventListener('input', handleIntakeInput, true);
+	container.addEventListener('change', handleIntakeChange);
+
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape') {
+			const { intake } = store.getState();
+			if (intake.isOpen) {
+				event.preventDefault();
+				closeIntakeModal();
+			}
+		}
+	});
+
+	container.dataset.bound = 'true';
+};
+
 const setupDragAndDrop = (root, state) => {
 	if (currentPresentation.mode === 'display') {
 		return;
@@ -2893,27 +3676,115 @@ document.addEventListener('DOMContentLoaded', () => {
 	}
 
 	boardRootElement = root;
+	applyAppearanceTheme(boardRootElement);
 	document.addEventListener('fullscreenchange', updateFullscreenButton);
 
 	if (settings.context?.view) {
 		root.dataset.activeView = settings.context.view;
 	}
 
-	renderBoard(store.getState(), root, settings, strings);
-	updateToolbarStates(root, store.getState());
+	const initialStateSnapshot = store.getState();
+	renderBoard(initialStateSnapshot, root, settings, strings);
+	updateToolbarStates(root, initialStateSnapshot);
 	attachToolbarHandlers(root);
 	setupLastUpdatedTicker(root);
-	renderModal(store.getState(), root, strings);
+	renderModal(initialStateSnapshot, root, strings);
 	handleModalEvents(root);
-	setupDragAndDrop(root, store.getState());
+	renderIntakeModal(initialStateSnapshot, root, strings);
+	handleIntakeEvents(root);
+	setupDragAndDrop(root, initialStateSnapshot);
+	lastBoardStateRef = {
+		board: initialStateSnapshot.board,
+		isLoading: initialStateSnapshot.isLoading,
+		pendingMoves: initialStateSnapshot.pendingMoves,
+		filters: initialStateSnapshot.filters,
+		viewOverride: initialStateSnapshot.viewOverride,
+		nextRefreshAt: initialStateSnapshot.nextRefreshAt,
+		lastFetchedAt: initialStateSnapshot.lastFetchedAt,
+	};
+	lastModalSnapshot = {
+		isOpen: initialStateSnapshot.modal.isOpen,
+		activeTab: initialStateSnapshot.modal.activeTab,
+		loading: initialStateSnapshot.modal.loading,
+		readOnly: initialStateSnapshot.modal.readOnly,
+		isSaving: initialStateSnapshot.modal.isSaving,
+		error: initialStateSnapshot.modal.error,
+		visitId: initialStateSnapshot.modal.visit?.id || null,
+		pendingUploads: initialStateSnapshot.modal.pendingUploads,
+	};
+	lastIntakeSnapshot = initialStateSnapshot.intake;
+	lastCatalogRef = initialStateSnapshot.catalog;
+	lastErrorsRef = initialStateSnapshot.errors;
 
 	store.subscribe((state) => {
-		renderBoard(state, root, settings, strings);
-		updateToolbarStates(root, state);
-		attachToolbarHandlers(root);
-		setupLastUpdatedTicker(root);
-		renderModal(state, root, strings);
-		setupDragAndDrop(root, state);
+		const boardChanged =
+			!lastBoardStateRef ||
+			state.board !== lastBoardStateRef.board ||
+			state.isLoading !== lastBoardStateRef.isLoading ||
+			state.pendingMoves !== lastBoardStateRef.pendingMoves ||
+			state.filters !== lastBoardStateRef.filters ||
+			state.viewOverride !== lastBoardStateRef.viewOverride ||
+			state.nextRefreshAt !== lastBoardStateRef.nextRefreshAt ||
+			state.lastFetchedAt !== lastBoardStateRef.lastFetchedAt;
+
+		const errorsChanged = state.errors !== lastErrorsRef;
+		if (boardChanged) {
+			renderBoard(state, root, settings, strings);
+			updateToolbarStates(root, state);
+			attachToolbarHandlers(root);
+			setupLastUpdatedTicker(root);
+			handleModalEvents(root);
+			setupDragAndDrop(root, state);
+			handleIntakeEvents(root);
+			lastBoardStateRef = {
+				board: state.board,
+				isLoading: state.isLoading,
+				pendingMoves: state.pendingMoves,
+				filters: state.filters,
+				viewOverride: state.viewOverride,
+				nextRefreshAt: state.nextRefreshAt,
+				lastFetchedAt: state.lastFetchedAt,
+			};
+		} else if (errorsChanged) {
+			renderErrors(state, root, strings);
+		}
+
+		const modalStructuralChanged =
+			!lastModalSnapshot ||
+			state.modal.isOpen !== lastModalSnapshot.isOpen ||
+			state.modal.activeTab !== lastModalSnapshot.activeTab ||
+			state.modal.loading !== lastModalSnapshot.loading ||
+			state.modal.readOnly !== lastModalSnapshot.readOnly ||
+			state.modal.isSaving !== lastModalSnapshot.isSaving ||
+			state.modal.error !== lastModalSnapshot.error ||
+			state.modal.pendingUploads !== lastModalSnapshot.pendingUploads ||
+			(state.modal.visit?.id || null) !== (lastModalSnapshot.visitId || null) ||
+			state.catalog !== lastCatalogRef;
+
+		if (modalStructuralChanged) {
+			renderModal(state, root, strings);
+			handleModalEvents(root);
+			lastModalSnapshot = {
+				isOpen: state.modal.isOpen,
+				activeTab: state.modal.activeTab,
+				loading: state.modal.loading,
+				readOnly: state.modal.readOnly,
+				isSaving: state.modal.isSaving,
+				error: state.modal.error,
+				visitId: state.modal.visit?.id || null,
+				pendingUploads: state.modal.pendingUploads,
+			};
+			lastCatalogRef = state.catalog;
+		}
+
+		const intakeChanged = state.intake !== lastIntakeSnapshot;
+		if (intakeChanged) {
+			renderIntakeModal(state, root, strings);
+			handleIntakeEvents(root);
+			lastIntakeSnapshot = state.intake;
+		}
+
+		lastErrorsRef = state.errors;
 	});
 
 	window.bbgfBoardSettings = settings;
@@ -2928,6 +3799,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	root.addEventListener('dragover', handleDragOver);
 	root.addEventListener('dragleave', handleDragLeave);
 	root.addEventListener('drop', handleDrop);
+	root.addEventListener('touchstart', handleTouchStart, { passive: true });
+	root.addEventListener('touchmove', handleTouchMove, { passive: false });
+	root.addEventListener('touchend', handleTouchEnd, { passive: true });
 
 	loadBoard({ reason: 'initial', forceFull: !settings.initialBoard });
 });

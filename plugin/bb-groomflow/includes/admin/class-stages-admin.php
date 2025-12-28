@@ -7,6 +7,7 @@
 
 namespace BBGF\Admin;
 
+use BBGF\Bootstrap\Admin_Menu_Service;
 use BBGF\Plugin;
 use WP_Error;
 
@@ -50,12 +51,13 @@ class Stages_Admin implements Admin_Page_Interface {
 	 */
 	public function register_menu(): void {
 		add_submenu_page(
-			'bbgf-dashboard',
+			Admin_Menu_Service::MENU_SLUG,
 			__( 'Stages', 'bb-groomflow' ),
 			__( 'Stages', 'bb-groomflow' ),
 			'bbgf_manage_views', // phpcs:ignore WordPress.WP.Capabilities.Unknown
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			10
 		);
 	}
 
@@ -126,6 +128,8 @@ class Stages_Admin implements Admin_Page_Interface {
 				),
 				$redirect
 			);
+
+			$this->plugin->visit_service()->flush_cache();
 		}
 
 		wp_safe_redirect( $redirect );

@@ -10,18 +10,34 @@ namespace BBGF\Data;
 use BBGF\Plugin;
 use DateTimeInterface;
 use WP_Error;
-use WP_REST_Response;
 use wpdb;
 
 /**
  * Encapsulates visit CRUD, stage transitions, board payloads, and media helpers.
  */
 class Visit_Service {
-	// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 	/**
 	 * Meta key linking attachment IDs to visits.
 	 */
-	private const VISIT_PHOTO_META_KEY = '_bbgf_visit_id';
+	private const VISIT_PHOTO_META_KEY          = '_bbgf_visit_id';
+	private const VISIT_PHOTO_GUARDIAN_META_KEY = '_bbgf_photo_guardian_visible';
+	private const VISIT_PHOTO_PRIMARY_META_KEY  = '_bbgf_photo_is_primary';
+
+	/**
+	 * Cache group for board/stage/view payloads.
+	 */
+	private const CACHE_GROUP = 'bbgf_board_cache';
+
+	/**
+	 * Cache index key for tracking view-level board payload caches.
+	 */
+	private const CACHE_INDEX_ALL_VIEWS = 'board_cache_views';
+
+	/**
+	 * Default cache TTLs (seconds).
+	 */
+	private const DEFAULT_BOARD_CACHE_TTL    = 5;
+	private const DEFAULT_METADATA_CACHE_TTL = 120;
 
 	/**
 	 * Plugin reference.
@@ -62,12 +78,15 @@ class Visit_Service {
 	 * @return array<string,mixed>|null
 	 */
 	public function get_view_by_slug( string $slug ): ?array {
-		$sql = $this->wpdb->prepare(
-			"SELECT * FROM {$this->tables['views']} WHERE slug = %s",
-			$slug
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $this->wpdb->get_row(
+			$this->wpdb->prepare(
+				"SELECT * FROM {$this->tables['views']} WHERE slug = %s",
+				$slug
+			),
+			ARRAY_A
 		);
-
-		$row = $this->wpdb->get_row( $sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_array( $row ) ? $row : null;
 	}
@@ -78,10 +97,71 @@ class Visit_Service {
 	 * @return array<string,mixed>|null
 	 */
 	public function get_default_view(): ?array {
-		$sql = "SELECT * FROM {$this->tables['views']} ORDER BY created_at ASC LIMIT 1";
-		$row = $this->wpdb->get_row( $sql, ARRAY_A );
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $this->wpdb->get_row(
+			$this->wpdb->prepare(
+				"SELECT * FROM {$this->tables['views']} ORDER BY created_at ASC LIMIT %d",
+				1
+			),
+			ARRAY_A
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_array( $row ) ? $row : null;
+	}
+
+	/**
+	 * Retrieve all board views for selectors.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_views_list(): array {
+		$cache_ttl = $this->get_cache_ttl( 'views' );
+		$cache_key = 'views_list';
+		$cache_hit = $cache_ttl > 0 ? wp_cache_get( $cache_key, self::CACHE_GROUP ) : false;
+
+		if ( is_array( $cache_hit ) ) {
+			return $cache_hit;
+		}
+
+		if ( empty( $this->tables['views'] ) ) {
+			return array();
+		}
+
+		$table = $this->tables['views'];
+		$sql   = "SELECT id, name, slug, type, allow_switcher, show_guardian, refresh_interval FROM {$table} ORDER BY name ASC";
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+
+		if ( empty( $rows ) ) {
+			return array();
+		}
+
+		$views = array();
+
+		foreach ( $rows as $row ) {
+			$slug = sanitize_key( (string) ( $row['slug'] ?? '' ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$views[] = array(
+				'id'               => (int) ( $row['id'] ?? 0 ),
+				'slug'             => $slug,
+				'name'             => (string) ( $row['name'] ?? $slug ),
+				'type'             => (string) ( $row['type'] ?? 'internal' ),
+				'allow_switcher'   => (bool) ( $row['allow_switcher'] ?? false ),
+				'show_guardian'    => (bool) ( $row['show_guardian'] ?? true ),
+				'refresh_interval' => (int) ( $row['refresh_interval'] ?? 0 ),
+			);
+		}
+
+		if ( $cache_ttl > 0 ) {
+			wp_cache_set( $cache_key, $views, self::CACHE_GROUP, $cache_ttl );
+		}
+
+		return $views;
 	}
 
 	/**
@@ -143,6 +223,32 @@ class Visit_Service {
 		$mask_sensitive_fields = ! empty( $args['mask_sensitive'] );
 		$is_read_only          = ! empty( $args['readonly'] );
 		$is_public_request     = ! empty( $args['is_public'] );
+		$view_id               = isset( $view['id'] ) ? (int) $view['id'] : 0;
+
+		$cache_ttl        = $this->get_cache_ttl( 'board' );
+		$latest_hint      = $view_id > 0 ? $this->get_latest_visit_updated_at( $view_id, $stage_filter_list ) : '';
+		$latest_hint_time = $latest_hint ? strtotime( $latest_hint ) : null;
+		$cache_key        = null;
+		$should_cache     = '' === $modified_after && $cache_ttl > 0;
+
+		if ( $should_cache ) {
+			$cache_key = $this->get_board_cache_key(
+				array(
+					'view_id'        => $view_id,
+					'stages'         => $stage_filter_list,
+					'mask_guardian'  => $mask_guardian,
+					'mask_sensitive' => $mask_sensitive_fields,
+					'readonly'       => $is_read_only,
+					'is_public'      => $is_public_request,
+				),
+				$latest_hint
+			);
+
+			$cached = wp_cache_get( $cache_key, self::CACHE_GROUP );
+			if ( is_array( $cached ) && isset( $cached['payload'] ) ) {
+				return $cached['payload'];
+			}
+		}
 
 		$modified_clause = '';
 		$modified_args   = array();
@@ -161,7 +267,7 @@ class Visit_Service {
 			LEFT JOIN {$this->tables['clients']} AS c ON c.id = v.client_id
 			LEFT JOIN {$this->tables['guardians']} AS g ON g.id = v.guardian_id
 			WHERE v.view_id = %d{$modified_clause}";
-		$args_sql = array_merge( array( (int) $view['id'] ), $modified_args );
+		$args_sql = array_merge( array( $view_id ), $modified_args );
 
 		if ( ! empty( $stage_filter_list ) ) {
 			$placeholders = implode( ',', array_fill( 0, count( $stage_filter_list ), '%s' ) );
@@ -171,7 +277,11 @@ class Visit_Service {
 
 		$sql .= ' ORDER BY v.updated_at DESC';
 
-		$visits = $this->wpdb->get_results( $this->wpdb->prepare( $sql, ...$args_sql ), ARRAY_A );
+		$prepared_sql = $this->wpdb->prepare(
+			$sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names and dynamic placeholders are controlled internally; values prepared via wpdb.
+			...$args_sql
+		);
+		$visits       = $this->wpdb->get_results( $prepared_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
 		$visit_ids = array_map(
 			static function ( $row ) {
@@ -180,9 +290,10 @@ class Visit_Service {
 			$visits
 		);
 
-		$services_map = $this->get_visit_services_map( $visit_ids );
-		$flags_map    = $this->get_visit_flags_map( $visit_ids );
-		$photos_map   = $this->get_visit_photos_map( $visit_ids );
+		$services_map   = $this->get_visit_services_map( $visit_ids );
+		$flags_map      = $this->get_visit_flags_map( $visit_ids );
+		$photos_map     = $this->get_visit_photos_map( $visit_ids );
+		$history_totals = $this->get_stage_elapsed_totals( $visit_ids );
 
 		$stage_buckets   = array();
 		$latest_modified = null;
@@ -203,7 +314,9 @@ class Visit_Service {
 					'mask_guardian'        => $mask_guardian,
 					'mask_sensitive'       => $mask_sensitive_fields,
 					'hide_sensitive_flags' => $mask_sensitive_fields,
-				)
+				),
+				array(),
+				$history_totals
 			);
 
 			if ( ! isset( $stage_buckets[ $stage_key ] ) ) {
@@ -223,7 +336,7 @@ class Visit_Service {
 		}
 
 		$stage_library = $this->get_stage_library();
-		$stage_rows    = $this->get_view_stage_rows( (int) $view['id'] );
+		$stage_rows    = $this->get_view_stage_rows( $view_id );
 
 		if ( empty( $stage_rows ) && ! empty( $stage_library ) ) {
 			foreach ( $stage_library as $stage_key => $row ) {
@@ -270,10 +383,12 @@ class Visit_Service {
 					'available_soft'   => $soft_limit > 0 ? max( 0, $soft_limit - $count ) : null,
 					'available_hard'   => $hard_limit > 0 ? max( 0, $hard_limit - $count ) : null,
 				),
-				'timer_thresholds' => array(
-					'green'  => (int) ( $row['timer_threshold_green'] ?? 0 ),
-					'yellow' => (int) ( $row['timer_threshold_yellow'] ?? 0 ),
-					'red'    => (int) ( $row['timer_threshold_red'] ?? 0 ),
+				'timer_thresholds' => $this->normalize_timer_thresholds(
+					array(
+						'green'  => (int) ( $row['timer_threshold_green'] ?? 0 ),
+						'yellow' => (int) ( $row['timer_threshold_yellow'] ?? 0 ),
+						'red'    => (int) ( $row['timer_threshold_red'] ?? 0 ),
+					)
 				),
 				'visit_count'      => $count,
 				'visits'           => $visits_for_stage,
@@ -302,10 +417,12 @@ class Visit_Service {
 					'available_soft'   => $soft_limit > 0 ? max( 0, $soft_limit - $count ) : null,
 					'available_hard'   => $hard_limit > 0 ? max( 0, $hard_limit - $count ) : null,
 				),
-				'timer_thresholds' => array(
-					'green'  => (int) ( $row['timer_threshold_green'] ?? 0 ),
-					'yellow' => (int) ( $row['timer_threshold_yellow'] ?? 0 ),
-					'red'    => (int) ( $row['timer_threshold_red'] ?? 0 ),
+				'timer_thresholds' => $this->normalize_timer_thresholds(
+					array(
+						'green'  => (int) ( $row['timer_threshold_green'] ?? 0 ),
+						'yellow' => (int) ( $row['timer_threshold_yellow'] ?? 0 ),
+						'red'    => (int) ( $row['timer_threshold_red'] ?? 0 ),
+					)
 				),
 				'visit_count'      => $count,
 				'visits'           => $visits_for_stage,
@@ -319,11 +436,15 @@ class Visit_Service {
 			}
 		);
 
-		$latest_modified = $latest_modified ? gmdate( 'Y-m-d H:i:s', $latest_modified ) : current_time( 'mysql', true );
+		if ( null === $latest_modified && null !== $latest_hint_time ) {
+			$latest_modified = $latest_hint_time;
+		}
 
-		return array(
+		$latest_modified_value = $latest_modified ? gmdate( 'Y-m-d H:i:s', $latest_modified ) : current_time( 'mysql', true );
+
+		$payload = array(
 			'view'         => array(
-				'id'               => (int) $view['id'],
+				'id'               => $view_id,
 				'slug'             => $view['slug'],
 				'name'             => $view['name'],
 				'type'             => $view['type'],
@@ -332,7 +453,7 @@ class Visit_Service {
 				'show_guardian'    => (bool) $view['show_guardian'],
 			),
 			'stages'       => array_values( $stages_payload ),
-			'last_updated' => $latest_modified,
+			'last_updated' => $latest_modified_value,
 			'visibility'   => array(
 				'mask_guardian'  => $mask_guardian,
 				'mask_sensitive' => $mask_sensitive_fields,
@@ -340,6 +461,20 @@ class Visit_Service {
 			'readonly'     => $is_read_only,
 			'is_public'    => $is_public_request,
 		);
+
+		if ( $should_cache && $cache_key ) {
+			wp_cache_set(
+				$cache_key,
+				array(
+					'payload' => $payload,
+				),
+				self::CACHE_GROUP,
+				$cache_ttl
+			);
+			$this->track_board_cache_key( $view_id, $cache_key );
+		}
+
+		return $payload;
 	}
 
 	/**
@@ -358,14 +493,25 @@ class Visit_Service {
 		$services = $this->get_visit_services_map( array( $visit_id ) );
 		$flags    = $this->get_visit_flags_map( array( $visit_id ) );
 		$photos   = $this->get_visit_photos_map( array( $visit_id ) );
+		$totals   = $this->get_stage_elapsed_totals( array( $visit_id ) );
 		$options  = is_array( $options ) ? $options : array();
 
-		$include_history = ! empty( $options['include_history'] );
-		$history_limit   = isset( $options['history_limit'] ) ? (int) $options['history_limit'] : 50;
-		$history         = array();
+		$include_history  = ! empty( $options['include_history'] );
+		$include_previous = array_key_exists( 'include_previous', $options ) ? (bool) $options['include_previous'] : true;
+		$history_limit    = isset( $options['history_limit'] ) ? (int) $options['history_limit'] : 50;
+		$history          = array();
+		$previous_visits  = array();
 
 		if ( $include_history ) {
 			$history = $this->get_stage_history( $visit_id, $history_limit );
+		}
+
+		if ( $include_previous ) {
+			$previous_visits = $this->get_previous_visits_for_client(
+				(int) ( $row['client_id'] ?? 0 ),
+				$visit_id,
+				! empty( $options['mask_sensitive'] )
+			);
 		}
 
 		$options['include_history'] = $include_history;
@@ -376,7 +522,9 @@ class Visit_Service {
 			$flags[ $visit_id ] ?? array(),
 			$photos[ $visit_id ] ?? array(),
 			$options,
-			$history
+			$history,
+			$totals,
+			$previous_visits
 		);
 	}
 
@@ -395,7 +543,8 @@ class Visit_Service {
 
 		$limit = max( 1, min( (int) $limit, 100 ) );
 
-		$sql = $this->wpdb->prepare(
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$prepared_sql = $this->wpdb->prepare(
 			"SELECT id, visit_id, from_stage, to_stage, comment, changed_by, changed_at, elapsed_seconds
 			FROM {$this->tables['stage_history']}
 			WHERE visit_id = %d
@@ -405,7 +554,8 @@ class Visit_Service {
 			$limit
 		);
 
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		if ( empty( $rows ) ) {
 			return array();
 		}
@@ -418,6 +568,67 @@ class Visit_Service {
 			},
 			$rows
 		);
+	}
+
+	/**
+	 * Retrieve previous visits for the same client.
+	 *
+	 * @param int  $client_id      Client ID.
+	 * @param int  $current_visit  Current visit ID to exclude.
+	 * @param bool $mask_sensitive Whether to hide notes/instructions.
+	 * @param int  $limit          Number of entries to return.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_previous_visits_for_client( int $client_id, int $current_visit, bool $mask_sensitive = false, int $limit = 5 ): array {
+		$client_id     = (int) $client_id;
+		$current_visit = (int) $current_visit;
+
+		if ( $client_id <= 0 ) {
+			return array();
+		}
+
+		$limit = max( 1, min( $limit, 10 ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT id, current_stage, status, check_in_at, check_out_at, instructions, public_notes, private_notes, created_at
+			FROM {$this->tables['visits']}
+			WHERE client_id = %d AND id <> %d
+			ORDER BY check_in_at DESC, created_at DESC
+			LIMIT %d",
+			$client_id,
+			$current_visit,
+			$limit
+		);
+
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$previous = array();
+		foreach ( $rows as $row ) {
+			$instructions  = (string) ( $row['instructions'] ?? '' );
+			$public_notes  = (string) ( $row['public_notes'] ?? '' );
+			$private_notes = (string) ( $row['private_notes'] ?? '' );
+
+			if ( $mask_sensitive ) {
+				$instructions  = '';
+				$public_notes  = '';
+				$private_notes = '';
+			}
+
+			$previous[] = array(
+				'id'            => (int) ( $row['id'] ?? 0 ),
+				'stage'         => (string) ( $row['current_stage'] ?? '' ),
+				'status'        => (string) ( $row['status'] ?? '' ),
+				'check_in_at'   => $this->maybe_rfc3339( $row['check_in_at'] ?? null ),
+				'check_out_at'  => $this->maybe_rfc3339( $row['check_out_at'] ?? null ),
+				'instructions'  => $instructions,
+				'public_notes'  => $public_notes,
+				'private_notes' => $private_notes,
+			);
+		}
+
+		return $previous;
 	}
 
 	/**
@@ -488,19 +699,25 @@ class Visit_Service {
 			);
 		}
 
+		$view_id = isset( $visit['view_id'] ) ? (int) $visit['view_id'] : 0;
+		$this->flush_cache( $view_id > 0 ? $view_id : null );
+
 		return $payload;
 	}
 
 	/**
 	 * Update a visit and return the payload.
 	 *
-	 * @param int                 $visit_id Visit ID.
-	 * @param array<string,mixed> $visit    Visit columns.
-	 * @param array<int>          $services Services to sync.
-	 * @param array<int>          $flags    Flags to sync.
+	 * @param int                      $visit_id Visit ID.
+	 * @param array<string,mixed>      $visit    Visit columns.
+	 * @param array<int>|null          $services Services to sync (null to keep existing).
+	 * @param array<int>|null          $flags    Flags to sync (null to keep existing).
+	 * @param array<string,mixed>|null $existing_row Existing visit row (optional) for cache invalidation.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function update_visit( int $visit_id, array $visit, array $services, array $flags ) {
+	public function update_visit( int $visit_id, array $visit, ?array $services, ?array $flags, ?array $existing_row = null ) {
+		$existing_row        = $existing_row ?? $this->get_visit_row( $visit_id );
+		$previous_view_id    = isset( $existing_row['view_id'] ) ? (int) $existing_row['view_id'] : null;
 		$visit['updated_at'] = $this->plugin->now();
 
 		$result = $this->wpdb->update(
@@ -519,8 +736,8 @@ class Visit_Service {
 				'%s',
 				'%s',
 				'%s',
-				'%s',
 				'%d',
+				'%s',
 			),
 			array( '%d' )
 		);
@@ -533,8 +750,13 @@ class Visit_Service {
 			);
 		}
 
-		$this->sync_visit_services( $visit_id, $services );
-		$this->sync_visit_flags( $visit_id, $flags );
+		if ( is_array( $services ) ) {
+			$this->sync_visit_services( $visit_id, $services );
+		}
+
+		if ( is_array( $flags ) ) {
+			$this->sync_visit_flags( $visit_id, $flags );
+		}
 
 		$payload = $this->get_visit( $visit_id );
 		if ( null === $payload ) {
@@ -543,6 +765,18 @@ class Visit_Service {
 				__( 'Visit updated but could not be loaded.', 'bb-groomflow' ),
 				array( 'status' => 500 )
 			);
+		}
+
+		$new_view_id = isset( $visit['view_id'] ) ? (int) $visit['view_id'] : $previous_view_id;
+
+		if ( $previous_view_id && $new_view_id !== $previous_view_id ) {
+			$this->flush_cache( $previous_view_id );
+		}
+
+		if ( $new_view_id ) {
+			$this->flush_cache( $new_view_id );
+		} else {
+			$this->flush_cache();
 		}
 
 		return $payload;
@@ -599,15 +833,24 @@ class Visit_Service {
 			);
 		}
 
-		$now_gmt = $this->plugin->now();
-		$elapsed = $this->calculate_elapsed_seconds( $visit_row );
+		$now_gmt          = $this->plugin->now();
+		$history_totals   = $this->get_stage_elapsed_totals( array( $visit_id ) );
+		$destination_base = $history_totals[ $visit_id ][ $destination ] ?? 0;
+
+		$current_started = isset( $visit_row['timer_started_at'] ) ? strtotime( (string) $visit_row['timer_started_at'] ) : false;
+		$current_base    = isset( $visit_row['timer_elapsed_seconds'] ) ? (int) $visit_row['timer_elapsed_seconds'] : 0;
+		$stint_seconds   = 0;
+
+		if ( false !== $current_started && $current_started > 0 ) {
+			$stint_seconds = max( 0, time() - $current_started );
+		}
 
 		$result = $this->wpdb->update(
 			$this->tables['visits'],
 			array(
 				'current_stage'         => $destination,
 				'timer_started_at'      => $now_gmt,
-				'timer_elapsed_seconds' => 0,
+				'timer_elapsed_seconds' => $destination_base,
 				'updated_at'            => $now_gmt,
 			),
 			array( 'id' => $visit_id ),
@@ -629,7 +872,7 @@ class Visit_Service {
 			$destination,
 			$comment,
 			$user_id,
-			$elapsed
+			$stint_seconds
 		);
 
 		$history_entry = null;
@@ -663,6 +906,8 @@ class Visit_Service {
 			)
 		);
 
+		$this->flush_cache( isset( $visit_row['view_id'] ) ? (int) $visit_row['view_id'] : null );
+
 		return array(
 			'visit'         => $updated,
 			'history_entry' => $history_entry,
@@ -672,11 +917,12 @@ class Visit_Service {
 	/**
 	 * Link an existing attachment to a visit.
 	 *
-	 * @param int $visit_id       Visit ID.
-	 * @param int $attachment_id  Attachment ID.
+	 * @param int  $visit_id              Visit ID.
+	 * @param int  $attachment_id         Attachment ID.
+	 * @param bool $visible_to_guardian   Whether guardian can view the photo.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function attach_existing_photo( int $visit_id, int $attachment_id ) {
+	public function attach_existing_photo( int $visit_id, int $attachment_id, bool $visible_to_guardian = true ) {
 		$visit = $this->get_visit_row( $visit_id );
 		if ( null === $visit ) {
 			return new WP_Error(
@@ -705,6 +951,10 @@ class Visit_Service {
 		}
 
 		update_post_meta( $attachment_id, self::VISIT_PHOTO_META_KEY, $visit_id );
+		update_post_meta( $attachment_id, self::VISIT_PHOTO_GUARDIAN_META_KEY, $visible_to_guardian ? 1 : 0 );
+		if ( ! $this->has_primary_photo( $visit_id ) ) {
+			update_post_meta( $attachment_id, self::VISIT_PHOTO_PRIMARY_META_KEY, 1 );
+		}
 
 		$photo = $this->format_photo_payload( $attachment_id );
 		if ( null === $photo ) {
@@ -726,6 +976,8 @@ class Visit_Service {
 			);
 		}
 
+		$this->flush_cache( isset( $visit['view_id'] ) ? (int) $visit['view_id'] : null );
+
 		return array(
 			'photo' => $photo,
 			'visit' => $payload,
@@ -737,15 +989,266 @@ class Visit_Service {
 	 *
 	 * @param int                 $visit_id Visit ID.
 	 * @param array<string,mixed> $file     File array.
+	 * @param bool                $visible_to_guardian Whether guardian can view the photo.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function attach_uploaded_photo( int $visit_id, array $file ) {
+	public function attach_uploaded_photo( int $visit_id, array $file, bool $visible_to_guardian = true ) {
 		$attachment_id = $this->handle_photo_upload( $file );
 		if ( is_wp_error( $attachment_id ) ) {
 			return $attachment_id;
 		}
 
-		return $this->attach_existing_photo( $visit_id, $attachment_id );
+		return $this->attach_existing_photo( $visit_id, $attachment_id, $visible_to_guardian );
+	}
+
+	/**
+	 * Handle a raw photo upload and return the new attachment ID.
+	 *
+	 * @param array<string,mixed> $file File array from the REST request.
+	 * @return int|WP_Error Attachment ID or error.
+	 */
+	private function handle_photo_upload( array $file ) {
+		if ( empty( $file['name'] ) ) {
+			return new WP_Error(
+				'bbgf_visit_photo_missing',
+				__( 'Provide an attachment_id or upload a file.', 'bb-groomflow' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$error_code = (int) ( $file['error'] ?? UPLOAD_ERR_OK );
+		if ( UPLOAD_ERR_OK !== $error_code ) {
+			return new WP_Error(
+				'bbgf_visit_photo_upload_failed',
+				__( 'Unable to upload the photo.', 'bb-groomflow' ),
+				array(
+					'status'       => 400,
+					'upload_error' => $error_code,
+				)
+			);
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$upload = wp_handle_upload(
+			$file,
+			array(
+				'test_form' => false,
+			)
+		);
+
+		if ( ! is_array( $upload ) || isset( $upload['error'] ) ) {
+			$message = is_array( $upload ) && ! empty( $upload['error'] ) ? (string) $upload['error'] : __( 'Upload failed.', 'bb-groomflow' );
+
+			return new WP_Error(
+				'bbgf_visit_photo_upload_failed',
+				$message,
+				array( 'status' => 500 )
+			);
+		}
+
+		$uploaded_file = (string) ( $upload['file'] ?? '' );
+		if ( '' === $uploaded_file ) {
+			return new WP_Error(
+				'bbgf_visit_photo_upload_failed',
+				__( 'Unable to process the uploaded photo.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$attachment = array(
+			'post_mime_type' => (string) ( $upload['type'] ?? '' ),
+			'post_title'     => sanitize_file_name( pathinfo( (string) $file['name'], PATHINFO_FILENAME ) ),
+			'post_content'   => '',
+			'post_status'    => 'inherit',
+		);
+
+		$attachment_id = wp_insert_attachment( $attachment, $uploaded_file );
+		if ( ! $attachment_id || is_wp_error( $attachment_id ) ) {
+			return new WP_Error(
+				'bbgf_visit_photo_upload_failed',
+				__( 'Unable to save the uploaded photo.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$metadata = wp_generate_attachment_metadata( $attachment_id, $uploaded_file );
+		if ( is_wp_error( $metadata ) ) {
+			return new WP_Error(
+				'bbgf_visit_photo_upload_failed',
+				__( 'Unable to generate photo metadata.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		wp_update_attachment_metadata( $attachment_id, $metadata );
+
+		return (int) $attachment_id;
+	}
+
+	/**
+	 * Update guardian visibility for a visit photo.
+	 *
+	 * @param int  $visit_id    Visit ID.
+	 * @param int  $attachment_id Attachment/Photo ID.
+	 * @param bool $visible     Whether the guardian can view the photo.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function update_photo_visibility( int $visit_id, int $attachment_id, bool $visible ) {
+		$visit = $this->get_visit_row( $visit_id );
+		if ( null === $visit ) {
+			return new WP_Error(
+				'bbgf_visit_not_found',
+				__( 'Visit not found.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$linked_visit = (int) get_post_meta( $attachment_id, self::VISIT_PHOTO_META_KEY, true );
+		if ( $linked_visit !== $visit_id ) {
+			return new WP_Error(
+				'bbgf_visit_photo_not_linked',
+				__( 'This photo is not linked to the selected visit.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		update_post_meta( $attachment_id, self::VISIT_PHOTO_GUARDIAN_META_KEY, $visible ? 1 : 0 );
+
+		$photo   = $this->format_photo_payload( $attachment_id );
+		$payload = $this->get_visit( $visit_id );
+
+		if ( null === $photo || null === $payload ) {
+			return new WP_Error(
+				'bbgf_visit_photo_update_failed',
+				__( 'Unable to refresh photo after updating visibility.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$this->flush_cache( isset( $visit['view_id'] ) ? (int) $visit['view_id'] : null );
+
+		return array(
+			'photo' => $photo,
+			'visit' => $payload,
+		);
+	}
+
+	/**
+	 * Set a primary photo for a visit, clearing previous primaries.
+	 *
+	 * @param int $visit_id       Visit ID.
+	 * @param int $attachment_id  Attachment/Photo ID.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function set_primary_photo( int $visit_id, int $attachment_id ) {
+		$visit = $this->get_visit_row( $visit_id );
+		if ( null === $visit ) {
+			return new WP_Error(
+				'bbgf_visit_not_found',
+				__( 'Visit not found.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$linked_visit = (int) get_post_meta( $attachment_id, self::VISIT_PHOTO_META_KEY, true );
+		if ( $linked_visit !== $visit_id ) {
+			return new WP_Error(
+				'bbgf_visit_photo_not_linked',
+				__( 'This photo is not linked to the selected visit.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$this->clear_primary_photo( $visit_id );
+		update_post_meta( $attachment_id, self::VISIT_PHOTO_PRIMARY_META_KEY, 1 );
+
+		$photo   = $this->format_photo_payload( $attachment_id );
+		$payload = $this->get_visit( $visit_id );
+
+		if ( null === $photo || null === $payload ) {
+			return new WP_Error(
+				'bbgf_visit_photo_update_failed',
+				__( 'Unable to refresh photo after updating primary.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$this->flush_cache( isset( $visit['view_id'] ) ? (int) $visit['view_id'] : null );
+
+		return array(
+			'photo' => $photo,
+			'visit' => $payload,
+		);
+	}
+
+	/**
+	 * Determine if a visit already has a primary photo.
+	 *
+	 * @param int $visit_id Visit ID.
+	 * @return bool
+	 */
+	private function has_primary_photo( int $visit_id ): bool {
+		$query = get_posts(
+			array(
+				'post_type'      => 'attachment',
+				'post_status'    => 'inherit',
+				'posts_per_page' => 1,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Narrow lookup scoped to visit attachments.
+				'meta_query'     => array(
+					'relation' => 'AND',
+					array(
+						'key'     => self::VISIT_PHOTO_META_KEY,
+						'value'   => $visit_id,
+						'compare' => '=',
+						'type'    => 'NUMERIC',
+					),
+					array(
+						'key'     => self::VISIT_PHOTO_PRIMARY_META_KEY,
+						'value'   => 1,
+						'compare' => '=',
+						'type'    => 'NUMERIC',
+					),
+				),
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		return ! empty( $query );
+	}
+
+	/**
+	 * Clear the primary flag for all photos on a visit.
+	 *
+	 * @param int $visit_id Visit ID.
+	 * @return void
+	 */
+	private function clear_primary_photo( int $visit_id ): void {
+		$query = get_posts(
+			array(
+				'post_type'      => 'attachment',
+				'post_status'    => 'inherit',
+				'posts_per_page' => -1,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Narrow lookup scoped to visit attachments.
+				'meta_query'     => array(
+					array(
+						'key'     => self::VISIT_PHOTO_META_KEY,
+						'value'   => $visit_id,
+						'compare' => '=',
+						'type'    => 'NUMERIC',
+					),
+				),
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		foreach ( $query as $attachment_id ) {
+			update_post_meta( (int) $attachment_id, self::VISIT_PHOTO_PRIMARY_META_KEY, 0 );
+		}
 	}
 
 	/**
@@ -766,12 +1269,21 @@ class Visit_Service {
 
 		$guardian_id = isset( $payload['guardian_id'] ) ? (int) $payload['guardian_id'] : 0;
 
-		$data = array(
+		$data    = array(
 			'name'        => sanitize_text_field( $name ),
 			'guardian_id' => $guardian_id > 0 ? $guardian_id : null,
+			'breed'       => sanitize_text_field( (string) ( $payload['breed'] ?? '' ) ),
+			'temperament' => sanitize_text_field( (string) ( $payload['temperament'] ?? '' ) ),
 			'notes'       => sanitize_textarea_field( (string) ( $payload['notes'] ?? '' ) ),
 			'updated_at'  => $this->plugin->now(),
 		);
+		$formats = array( '%s', '%d', '%s', '%s', '%s', '%s' );
+
+		$weight_raw = isset( $payload['weight'] ) ? trim( (string) $payload['weight'] ) : '';
+		if ( '' !== $weight_raw ) {
+			$data['weight'] = (float) $weight_raw;
+			$formats[]      = '%f';
+		}
 
 		if ( isset( $payload['id'] ) ) {
 			$client_id = (int) $payload['id'];
@@ -780,7 +1292,7 @@ class Visit_Service {
 					$this->tables['clients'],
 					$data,
 					array( 'id' => $client_id ),
-					array( '%s', '%d', '%s', '%s' ),
+					$formats,
 					array( '%d' )
 				);
 
@@ -793,11 +1305,13 @@ class Visit_Service {
 
 		$data['slug']       = $this->plugin->unique_slug( $data['name'], $this->tables['clients'], 'slug' );
 		$data['created_at'] = $this->plugin->now();
+		$formats[]          = '%s';
+		$formats[]          = '%s';
 
 		$this->wpdb->insert(
 			$this->tables['clients'],
 			$data,
-			array( '%s', '%d', '%s', '%s', '%s' )
+			$formats
 		);
 
 		return array(
@@ -860,6 +1374,93 @@ class Visit_Service {
 	}
 
 	/**
+	 * Search clients and guardians for intake workflows.
+	 *
+	 * @param string $query Search string.
+	 * @param int    $limit Max rows to return.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function search_intake_entities( string $query, int $limit = 10 ): array {
+		$query = trim( $query );
+		$limit = max( 1, min( 20, $limit ) );
+
+		$clients_table   = $this->tables['clients'];
+		$guardians_table = $this->tables['guardians'];
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table names come from plugin schema map; values use prepared placeholders.
+		if ( '' !== $query ) {
+			$like = '%' . $this->wpdb->esc_like( $query ) . '%';
+
+			$sql = $this->wpdb->prepare(
+				"
+				SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
+					g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
+				FROM {$clients_table} AS c
+				LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
+				WHERE (c.name LIKE %s OR c.breed LIKE %s OR c.notes LIKE %s OR g.first_name LIKE %s OR g.last_name LIKE %s OR g.email LIKE %s OR g.phone_mobile LIKE %s OR g.phone_alt LIKE %s)
+				ORDER BY c.name ASC
+				LIMIT %d
+				",
+				$like,
+				$like,
+				$like,
+				$like,
+				$like,
+				$like,
+				$like,
+				$like,
+				$limit
+			);
+		} else {
+			$sql = $this->wpdb->prepare(
+				"
+				SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
+					g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
+				FROM {$clients_table} AS c
+				LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
+				ORDER BY c.updated_at DESC, c.name ASC
+				LIMIT %d
+				",
+				$limit
+			);
+		}
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
+		if ( empty( $rows ) ) {
+			return array();
+		}
+
+		return array_map(
+			static function ( $row ) {
+				$guardian_id = isset( $row['guardian_id'] ) ? (int) $row['guardian_id'] : 0;
+				$client_id   = isset( $row['client_id'] ) ? (int) $row['client_id'] : 0;
+
+				return array(
+					'client'   => array(
+						'id'          => $client_id,
+						'name'        => (string) ( $row['client_name'] ?? '' ),
+						'breed'       => (string) ( $row['breed'] ?? '' ),
+						'weight'      => isset( $row['weight'] ) ? (float) $row['weight'] : null,
+						'temperament' => (string) ( $row['temperament'] ?? '' ),
+						'guardian_id' => $guardian_id > 0 ? $guardian_id : null,
+					),
+					'guardian' => $guardian_id > 0 ? array(
+						'id'                => $guardian_id,
+						'first_name'        => (string) ( $row['first_name'] ?? '' ),
+						'last_name'         => (string) ( $row['last_name'] ?? '' ),
+						'email'             => (string) ( $row['email'] ?? '' ),
+						'phone_mobile'      => (string) ( $row['phone_mobile'] ?? '' ),
+						'phone_alt'         => (string) ( $row['phone_alt'] ?? '' ),
+						'preferred_contact' => (string) ( $row['preferred_contact'] ?? '' ),
+					) : null,
+				);
+			},
+			$rows
+		);
+	}
+
+	/**
 	 * Ensure referenced IDs exist in a table.
 	 *
 	 * @param string $table Table name.
@@ -873,10 +1474,13 @@ class Visit_Service {
 			return true;
 		}
 
-		$id_list = implode( ',', $ids );
-		$sql     = "SELECT id FROM {$table} WHERE id IN ({$id_list})";
-		$found   = array_map( 'intval', $this->wpdb->get_col( $sql ) );
-		$missing = array_diff( $ids, $found );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT id FROM {$table} WHERE id IN ({$placeholders})", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table name from plugin schema map; placeholder list built from sanitised IDs.
+			...$ids
+		);
+		$found        = array_map( 'intval', $this->wpdb->get_col( $prepared_sql ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$missing      = array_diff( $ids, $found );
 
 		if ( ! empty( $missing ) ) {
 			return new WP_Error(
@@ -897,8 +1501,12 @@ class Visit_Service {
 	 * @return bool
 	 */
 	public function record_exists( string $table, int $id ): bool {
-		$sql = $this->wpdb->prepare( "SELECT id FROM {$table} WHERE id = %d", $id );
-		return (int) $this->wpdb->get_var( $sql ) > 0;
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT id FROM {$table} WHERE id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from plugin schema map.
+			$id
+		);
+
+		return (int) $this->wpdb->get_var( $prepared_sql ) > 0; // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	}
 
 	/**
@@ -918,20 +1526,23 @@ class Visit_Service {
 			return (int) ( $visit['timer_elapsed_seconds'] ?? 0 );
 		}
 
-		$now     = time();
-		$current = max( 0, $now - $start_time );
+		$now = time();
+		if ( $now <= $start_time ) {
+			return (int) ( $visit['timer_elapsed_seconds'] ?? 0 );
+		}
 
-		return (int) ( $visit['timer_elapsed_seconds'] ?? 0 ) + $current;
+		return (int) ( $visit['timer_elapsed_seconds'] ?? 0 ) + max( 0, $now - $start_time );
 	}
 
 	/**
 	 * Calculate the live timer seconds for the current stage.
 	 *
 	 * @param array $visit Visit row.
+	 * @param int   $history_total Previously accrued seconds for the stage.
 	 * @return int
 	 */
-	private function calculate_stage_timer_seconds( array $visit ): int {
-		$base    = (int) ( $visit['timer_elapsed_seconds'] ?? 0 );
+	private function calculate_stage_timer_seconds( array $visit, int $history_total = 0 ): int {
+		$base    = max( $history_total, (int) ( $visit['timer_elapsed_seconds'] ?? 0 ) );
 		$started = $visit['timer_started_at'] ?? null;
 
 		if ( ! $started ) {
@@ -962,17 +1573,19 @@ class Visit_Service {
 			return null;
 		}
 
-		$sql = $this->wpdb->prepare(
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$prepared_sql = $this->wpdb->prepare(
 			"SELECT v.*, c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight,
 				g.first_name AS guardian_first_name, g.last_name AS guardian_last_name, g.phone_mobile AS guardian_phone, g.email AS guardian_email
 			FROM {$this->tables['visits']} AS v
 			LEFT JOIN {$this->tables['clients']} AS c ON c.id = v.client_id
 			LEFT JOIN {$this->tables['guardians']} AS g ON g.id = v.guardian_id
-			WHERE v.id = %d",
+			WHERE v.id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names sourced from plugin schema map.
 			$visit_id
 		);
 
-		$row = $this->wpdb->get_row( $sql, ARRAY_A );
+		$row = $this->wpdb->get_row( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_array( $row ) ? $row : null;
 	}
@@ -982,13 +1595,15 @@ class Visit_Service {
 	 *
 	 * @param array<int|string,mixed>        $visit_row Visit row.
 	 * @param array<int,array<string,mixed>> $services  Services.
-	 * @param array<int,array<string,mixed>> $flags     Flags.
-	 * @param array<int,array<string,mixed>> $photos    Photos.
-	 * @param array<string,bool>             $options   Options.
-	 * @param array<int,array<string,mixed>> $history   Stage history entries.
+	 * @param array<int,array<string,mixed>> $flags           Flags.
+	 * @param array<int,array<string,mixed>> $photos          Photos.
+	 * @param array<string,bool>             $options         Options.
+	 * @param array<int,array<string,mixed>> $history         Stage history entries.
+	 * @param array<int,array<string,int>>   $history_totals  Stage elapsed totals keyed by visit ID then stage key.
+	 * @param array<int,array<string,mixed>> $previous_visits Prior visits for the client.
 	 * @return array<string,mixed>
 	 */
-	private function format_visit_payload( array $visit_row, array $services, array $flags, array $photos = array(), array $options = array(), array $history = array() ): array {
+	private function format_visit_payload( array $visit_row, array $services, array $flags, array $photos = array(), array $options = array(), array $history = array(), array $history_totals = array(), array $previous_visits = array() ): array {
 		$mask_guardian        = ! empty( $options['mask_guardian'] );
 		$mask_sensitive       = ! empty( $options['mask_sensitive'] );
 		$hide_sensitive_flags = ! empty( $options['hide_sensitive_flags'] );
@@ -1038,6 +1653,22 @@ class Visit_Service {
 			}
 		}
 
+		if ( ! empty( $normalised_photos ) ) {
+			usort(
+				$normalised_photos,
+				static function ( array $a, array $b ) {
+					$is_primary_a = ! empty( $a['is_primary'] );
+					$is_primary_b = ! empty( $b['is_primary'] );
+
+					if ( $is_primary_a === $is_primary_b ) {
+						return 0;
+					}
+
+					return $is_primary_a ? -1 : 1;
+				}
+			);
+		}
+
 		$instructions  = (string) ( $visit_row['instructions'] ?? '' );
 		$private_notes = (string) ( $visit_row['private_notes'] ?? '' );
 		$public_notes  = (string) ( $visit_row['public_notes'] ?? '' );
@@ -1049,6 +1680,10 @@ class Visit_Service {
 			$public_notes  = '';
 			$assigned      = null;
 		}
+
+		$visit_id      = (int) $visit_row['id'];
+		$current_stage = (string) ( $visit_row['current_stage'] ?? '' );
+		$history_total = $history_totals[ $visit_id ][ $current_stage ] ?? 0;
 
 		$payload = array(
 			'id'                    => (int) $visit_row['id'],
@@ -1070,10 +1705,11 @@ class Visit_Service {
 			'private_notes'         => $private_notes,
 			'public_notes'          => $public_notes,
 			'timer_started_at'      => $this->maybe_rfc3339( $visit_row['timer_started_at'] ?? null ),
-			'timer_elapsed_seconds' => $this->calculate_stage_timer_seconds( $visit_row ),
+			'timer_elapsed_seconds' => $this->calculate_stage_timer_seconds( $visit_row, $history_total ),
 			'services'              => $normalised_services,
 			'flags'                 => $filtered_flags,
 			'photos'                => $normalised_photos,
+			'previous_visits'       => $previous_visits,
 			'created_at'            => $this->maybe_rfc3339( $visit_row['created_at'] ?? null ),
 			'updated_at'            => $this->maybe_rfc3339( $visit_row['updated_at'] ?? null ),
 		);
@@ -1097,15 +1733,20 @@ class Visit_Service {
 			return array();
 		}
 
-		$id_list = implode( ',', $visit_ids );
+		$placeholders = implode( ',', array_fill( 0, count( $visit_ids ), '%d' ) );
 
-		$sql = "SELECT vs.visit_id, vs.service_id, vs.package_id, s.name, s.icon
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT vs.visit_id, vs.service_id, vs.package_id, s.name, s.icon
 			FROM {$this->tables['visit_services']} AS vs
 			LEFT JOIN {$this->tables['services']} AS s ON s.id = vs.service_id
-			WHERE vs.visit_id IN ({$id_list})
-			ORDER BY vs.added_at ASC";
+			WHERE vs.visit_id IN ({$placeholders})
+			ORDER BY vs.added_at ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table names from plugin schema map; placeholder list built from sanitised visit IDs.
+			...$visit_ids
+		);
 
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
 
 		$map = array();
 		foreach ( $rows as $row ) {
@@ -1137,15 +1778,20 @@ class Visit_Service {
 			return array();
 		}
 
-		$id_list = implode( ',', $visit_ids );
+		$placeholders = implode( ',', array_fill( 0, count( $visit_ids ), '%d' ) );
 
-		$sql = "SELECT vf.visit_id, vf.flag_id, f.name, f.emoji, f.color, f.severity
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT vf.visit_id, vf.flag_id, f.name, f.emoji, f.color, f.severity
 			FROM {$this->tables['visit_flags']} AS vf
 			LEFT JOIN {$this->tables['flags']} AS f ON f.id = vf.flag_id
-			WHERE vf.visit_id IN ({$id_list})
-			ORDER BY vf.added_at ASC";
+			WHERE vf.visit_id IN ({$placeholders})
+			ORDER BY vf.added_at ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table names from plugin schema map; placeholder list built from sanitised visit IDs.
+			...$visit_ids
+		);
 
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
 
 		$map = array();
 		foreach ( $rows as $row ) {
@@ -1164,6 +1810,51 @@ class Visit_Service {
 		}
 
 		return $map;
+	}
+
+	/**
+	 * Retrieve accumulated elapsed seconds per visit per stage from history.
+	 *
+	 * @param array<int> $visit_ids Visit IDs.
+	 * @return array<int,array<string,int>>
+	 */
+	private function get_stage_elapsed_totals( array $visit_ids ): array {
+		$visit_ids = array_filter( array_map( 'intval', $visit_ids ) );
+		if ( empty( $visit_ids ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $visit_ids ), '%d' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT visit_id, from_stage, SUM(elapsed_seconds) AS total
+			FROM {$this->tables['stage_history']}
+			WHERE visit_id IN ({$placeholders})
+			GROUP BY visit_id, from_stage",
+			...$visit_ids
+		);
+
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+		$totals = array();
+		foreach ( $rows as $row ) {
+			$visit_id = (int) ( $row['visit_id'] ?? 0 );
+			$from     = sanitize_key( (string) ( $row['from_stage'] ?? '' ) );
+			$elapsed  = isset( $row['total'] ) ? (int) $row['total'] : 0;
+			if ( $visit_id <= 0 || '' === $from ) {
+				continue;
+			}
+
+			if ( ! isset( $totals[ $visit_id ] ) ) {
+				$totals[ $visit_id ] = array();
+			}
+
+			$totals[ $visit_id ][ $from ] = $elapsed;
+		}
+
+		return $totals;
 	}
 
 	/**
@@ -1250,8 +1941,8 @@ class Visit_Service {
 			$alt = $attachment->post_title ?? '';
 		}
 
-			$sizes       = array();
-			$image_sizes = get_intermediate_image_sizes();
+		$sizes       = array();
+		$image_sizes = get_intermediate_image_sizes();
 		foreach ( $image_sizes as $size ) {
 			$details = wp_get_attachment_image_src( $attachment_id, $size );
 			if ( ! $details || empty( $details[0] ) ) {
@@ -1271,14 +1962,20 @@ class Visit_Service {
 		}
 
 		$uploaded_at = is_string( $uploaded_at ) && '' !== $uploaded_at ? $uploaded_at : null;
+		$visible     = get_post_meta( $attachment_id, self::VISIT_PHOTO_GUARDIAN_META_KEY, true );
 
 		return array(
-			'id'          => (int) $attachment_id,
-			'url'         => (string) $url,
-			'alt'         => (string) $alt,
-			'mime_type'   => (string) get_post_mime_type( $attachment_id ),
-			'sizes'       => $sizes,
-			'uploaded_at' => $uploaded_at ? mysql_to_rfc3339( $uploaded_at ) : null,
+			'id'                  => (int) $attachment_id,
+			'url'                 => (string) $url,
+			'alt'                 => (string) $alt,
+			'mime_type'           => (string) get_post_mime_type( $attachment_id ),
+			'sizes'               => $sizes,
+			'thumbnail'           => $sizes['thumbnail'] ?? null,
+			'width'               => $sizes['full']['width'] ?? ( $sizes['large']['width'] ?? null ),
+			'height'              => $sizes['full']['height'] ?? ( $sizes['large']['height'] ?? null ),
+			'uploaded_at'         => $uploaded_at ? mysql_to_rfc3339( $uploaded_at ) : null,
+			'visible_to_guardian' => (bool) ( '' === $visible ? true : (int) $visible ),
+			'is_primary'          => (bool) get_post_meta( $attachment_id, self::VISIT_PHOTO_PRIMARY_META_KEY, true ),
 		);
 	}
 
@@ -1393,14 +2090,16 @@ class Visit_Service {
 			return null;
 		}
 
-		$sql = $this->wpdb->prepare(
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$prepared_sql = $this->wpdb->prepare(
 			"SELECT id, visit_id, from_stage, to_stage, comment, changed_by, changed_at, elapsed_seconds
 			FROM {$this->tables['stage_history']}
-			WHERE id = %d",
+			WHERE id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name sourced from plugin schema map.
 			$history_id
 		);
 
-		$row = $this->wpdb->get_row( $sql, ARRAY_A );
+		$row = $this->wpdb->get_row( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		if ( ! is_array( $row ) ) {
 			return null;
 		}
@@ -1454,10 +2153,20 @@ class Visit_Service {
 	 * @return array<string,array<string,mixed>>
 	 */
 	private function get_stage_library(): array {
+		$cache_ttl = $this->get_cache_ttl( 'metadata' );
+		$cache_key = 'stage_library';
+
+		if ( $cache_ttl > 0 ) {
+			$cached = wp_cache_get( $cache_key, self::CACHE_GROUP );
+			if ( is_array( $cached ) ) {
+				return $cached;
+			}
+		}
+
 		$sql  = "SELECT stage_key, label, description, capacity_soft_limit, capacity_hard_limit, timer_threshold_green, timer_threshold_yellow, timer_threshold_red, sort_order
 			FROM {$this->tables['stages']}
-			ORDER BY sort_order ASC";
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+			ORDER BY sort_order ASC"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from plugin schema map.
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Static lookup query without external input.
 
 		$library = array();
 		foreach ( $rows as $row ) {
@@ -1478,7 +2187,43 @@ class Visit_Service {
 			);
 		}
 
+		if ( $cache_ttl > 0 ) {
+			wp_cache_set( $cache_key, $library, self::CACHE_GROUP, $cache_ttl );
+		}
+
 		return $library;
+	}
+
+	/**
+	 * Normalise timer thresholds to sane defaults.
+	 *
+	 * @param array<string,int> $thresholds Raw thresholds.
+	 * @return array<string,int>
+	 */
+	private function normalize_timer_thresholds( array $thresholds ): array {
+		$defaults = array(
+			'green'  => 900,   // 15 minutes.
+			'yellow' => 1800,  // 30 minutes.
+			'red'    => 2700,  // 45 minutes.
+		);
+
+		$normalized = array_merge( $defaults, $thresholds );
+
+		// If values look like minutes (tiny numbers), treat them as minutes and convert to seconds.
+		foreach ( array( 'green', 'yellow', 'red' ) as $key ) {
+			if ( isset( $normalized[ $key ] ) && $normalized[ $key ] > 0 && $normalized[ $key ] <= 120 ) {
+				$normalized[ $key ] = $normalized[ $key ] * 60;
+			}
+		}
+
+		if ( $normalized['yellow'] < $normalized['green'] ) {
+			$normalized['yellow'] = $normalized['green'];
+		}
+		if ( $normalized['red'] < $normalized['yellow'] ) {
+			$normalized['red'] = $normalized['yellow'];
+		}
+
+		return $normalized;
 	}
 
 	/**
@@ -1492,15 +2237,26 @@ class Visit_Service {
 			return array();
 		}
 
-		$sql = $this->wpdb->prepare(
+		$cache_ttl = $this->get_cache_ttl( 'metadata' );
+		$cache_key = $this->get_view_stage_cache_key( $view_id );
+		if ( $cache_ttl > 0 ) {
+			$cached = wp_cache_get( $cache_key, self::CACHE_GROUP );
+			if ( is_array( $cached ) ) {
+				return $cached;
+			}
+		}
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$prepared_sql = $this->wpdb->prepare(
 			"SELECT stage_key, label, sort_order, capacity_soft_limit, capacity_hard_limit, timer_threshold_green, timer_threshold_yellow, timer_threshold_red
 			FROM {$this->tables['view_stages']}
 			WHERE view_id = %d
-			ORDER BY sort_order ASC",
+			ORDER BY sort_order ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from plugin schema map.
 			$view_id
 		);
 
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+		$rows = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		if ( ! is_array( $rows ) ) {
 			return array();
 		}
@@ -1522,6 +2278,10 @@ class Visit_Service {
 				'timer_threshold_yellow' => (int) ( $row['timer_threshold_yellow'] ?? 0 ),
 				'timer_threshold_red'    => (int) ( $row['timer_threshold_red'] ?? 0 ),
 			);
+		}
+
+		if ( $cache_ttl > 0 ) {
+			wp_cache_set( $cache_key, $normalised, self::CACHE_GROUP, $cache_ttl );
 		}
 
 		return $normalised;
@@ -1549,6 +2309,230 @@ class Visit_Service {
 		}
 
 		return gmdate( DATE_RFC3339, $time );
+	}
+
+	/**
+	 * Clear cached board payloads and metadata.
+	 *
+	 * @param int|null $view_id Optional view ID to target. Flushes all caches when omitted.
+	 * @return void
+	 */
+	public function flush_cache( ?int $view_id = null ): void {
+		if ( null === $view_id ) {
+			$cached_views = wp_cache_get( self::CACHE_INDEX_ALL_VIEWS, self::CACHE_GROUP );
+
+			wp_cache_delete( 'views_list', self::CACHE_GROUP );
+			wp_cache_delete( 'stage_library', self::CACHE_GROUP );
+
+			if ( is_array( $cached_views ) ) {
+				foreach ( $cached_views as $cached_view_id ) {
+					wp_cache_delete( $this->get_view_stage_cache_key( (int) $cached_view_id ), self::CACHE_GROUP );
+				}
+			}
+
+			$this->purge_board_cache_keys();
+
+			return;
+		}
+
+		$view_id = (int) $view_id;
+		if ( $view_id <= 0 ) {
+			return;
+		}
+
+		wp_cache_delete( $this->get_view_stage_cache_key( $view_id ), self::CACHE_GROUP );
+		$this->purge_board_cache_keys( $view_id );
+	}
+
+	/**
+	 * Fetch the latest visit update timestamp for a view/stage filter.
+	 *
+	 * @param int               $view_id           View ID.
+	 * @param array<int|string> $stage_filter_list Stage filter list.
+	 * @return string
+	 */
+	private function get_latest_visit_updated_at( int $view_id, array $stage_filter_list ): string {
+		if ( $view_id <= 0 ) {
+			return '';
+		}
+
+		$sql        = "SELECT MAX(updated_at) FROM {$this->tables['visits']} WHERE view_id = %d";
+		$sql_args   = array( $view_id );
+		$stage_keys = array();
+
+		if ( ! empty( $stage_filter_list ) ) {
+			$stage_keys   = array_values(
+				array_filter(
+					array_map(
+						static function ( $stage ) {
+							return sanitize_key( (string) $stage );
+						},
+						$stage_filter_list
+					)
+				)
+			);
+			$placeholders = implode( ',', array_fill( 0, count( $stage_keys ), '%s' ) );
+			$sql         .= " AND current_stage IN ({$placeholders})";
+			$sql_args     = array_merge( $sql_args, $stage_keys );
+		}
+
+		$prepared_sql = $this->wpdb->prepare(
+			$sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names/filters are internal; values prepared via wpdb.
+			...$sql_args
+		);
+
+		$latest = $this->wpdb->get_var( $prepared_sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return is_string( $latest ) ? $latest : '';
+	}
+
+	/**
+	 * Create a stable cache key for a board payload context.
+	 *
+	 * @param array<string,mixed> $context Cache context (view, filters, masking).
+	 * @param string              $latest_hint Latest visit timestamp hint.
+	 * @return string
+	 */
+	private function get_board_cache_key( array $context, string $latest_hint ): string {
+		$context['stages'] = array_values(
+			array_filter(
+				array_unique(
+					array_map(
+						static function ( $stage ) {
+							return sanitize_key( (string) $stage );
+						},
+						$context['stages'] ?? array()
+					)
+				)
+			)
+		);
+
+		sort( $context['stages'] );
+
+		$context['latest'] = $latest_hint;
+
+		return 'board_' . md5( wp_json_encode( $context ) );
+	}
+
+	/**
+	 * Track cache keys for a view so they can be purged later.
+	 *
+	 * @param int    $view_id   View ID.
+	 * @param string $cache_key Cache key to track.
+	 * @return void
+	 */
+	private function track_board_cache_key( int $view_id, string $cache_key ): void {
+		if ( $view_id <= 0 || '' === $cache_key ) {
+			return;
+		}
+
+		$index_key = $this->get_board_cache_index_key( $view_id );
+		$keys      = wp_cache_get( $index_key, self::CACHE_GROUP );
+		if ( ! is_array( $keys ) ) {
+			$keys = array();
+		}
+
+		if ( ! in_array( $cache_key, $keys, true ) ) {
+			$keys[] = $cache_key;
+			wp_cache_set( $index_key, $keys, self::CACHE_GROUP, $this->get_cache_ttl( 'board' ) );
+		}
+
+		$views_index = wp_cache_get( self::CACHE_INDEX_ALL_VIEWS, self::CACHE_GROUP );
+		if ( ! is_array( $views_index ) ) {
+			$views_index = array();
+		}
+
+		if ( ! in_array( $view_id, $views_index, true ) ) {
+			$views_index[] = $view_id;
+			wp_cache_set( self::CACHE_INDEX_ALL_VIEWS, $views_index, self::CACHE_GROUP );
+		}
+	}
+
+	/**
+	 * Purge cached board payloads.
+	 *
+	 * @param int|null $view_id View ID to target or null for all.
+	 * @return void
+	 */
+	private function purge_board_cache_keys( ?int $view_id = null ): void {
+		$view_ids = array();
+
+		if ( null === $view_id ) {
+			$view_ids = wp_cache_get( self::CACHE_INDEX_ALL_VIEWS, self::CACHE_GROUP );
+			if ( ! is_array( $view_ids ) ) {
+				$view_ids = array();
+			}
+		} else {
+			$view_ids = array( (int) $view_id );
+		}
+
+		foreach ( $view_ids as $cached_view_id ) {
+			$index_key = $this->get_board_cache_index_key( (int) $cached_view_id );
+			$keys      = wp_cache_get( $index_key, self::CACHE_GROUP );
+
+			if ( is_array( $keys ) ) {
+				foreach ( $keys as $key ) {
+					wp_cache_delete( $key, self::CACHE_GROUP );
+				}
+			}
+
+			wp_cache_delete( $index_key, self::CACHE_GROUP );
+		}
+
+		if ( null === $view_id ) {
+			wp_cache_delete( self::CACHE_INDEX_ALL_VIEWS, self::CACHE_GROUP );
+		}
+	}
+
+	/**
+	 * Cache key for a view's stage definitions.
+	 *
+	 * @param int $view_id View ID.
+	 * @return string
+	 */
+	private function get_view_stage_cache_key( int $view_id ): string {
+		return 'view_stages_' . $view_id;
+	}
+
+	/**
+	 * Cache key for tracking board cache entries per view.
+	 *
+	 * @param int $view_id View ID.
+	 * @return string
+	 */
+	private function get_board_cache_index_key( int $view_id ): string {
+		return 'board_cache_keys_' . $view_id;
+	}
+
+	/**
+	 * Resolve cache TTL for a given cache bucket.
+	 *
+	 * @param string $type Cache bucket (board|metadata|views).
+	 * @return int
+	 */
+	private function get_cache_ttl( string $type ): int {
+		$defaults = array(
+			'board'    => self::DEFAULT_BOARD_CACHE_TTL,
+			'metadata' => self::DEFAULT_METADATA_CACHE_TTL,
+			'views'    => self::DEFAULT_METADATA_CACHE_TTL,
+		);
+
+		$filters = array(
+			'board'    => 'bbgf_board_payload_cache_ttl',
+			'metadata' => 'bbgf_board_metadata_cache_ttl',
+			'views'    => 'bbgf_board_views_cache_ttl',
+		);
+
+		$default_ttl = $defaults[ $type ] ?? self::DEFAULT_METADATA_CACHE_TTL;
+		$filter_name = $filters[ $type ] ?? 'bbgf_board_metadata_cache_ttl';
+
+		$ttl = (int) apply_filters( $filter_name, $default_ttl, $type );
+
+		if ( $ttl < 0 ) {
+			return 0;
+		}
+
+		return $ttl;
 	}
 
 	/**
@@ -1600,5 +2584,4 @@ class Visit_Service {
 			require_once ABSPATH . 'wp-admin/includes/media.php';
 		}
 	}
-	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 }

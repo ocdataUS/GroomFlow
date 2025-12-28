@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Build and install the latest GroomFlow plugin ZIP into Docker WP after prior agent was blocked, so photo UX changes can be validated.
+- **Plan:** Rebuild assets/ZIP, bring Docker stack online, install the packaged plugin, reseed demo data, run PHPCS, and smoke the board payload via WP-CLI.
+- **Files changed:** None (rebuilt/installed package only; existing working tree changes left untouched).
+- **Commands executed:** `npm run build`; `bash scripts/build_plugin_zip.sh`; `cd docker && docker compose up -d`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow.zip --force --activate`; `docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8 --force`; `qa-phpcs plugin/bb-groomflow`; `docker compose run --rm -T wpcli wp bbgf visits list --limit=5`; `docker compose run --rm -T wpcli wp eval "<board payload stage counts script>"`.
+- **Tests & results:** `qa-phpcs plugin/bb-groomflow` → `/opt/qa/artifacts/phpcs-1766599870.txt` (empty file, no sniffs); demo seed succeeded (40 visits across 5 views); board payload eval shows stage counts `{"check-in":2,"bath":2,"grooming":2,"ready":2}` with fresh `last_updated`.
+- **Tips & Tricks:** WP-CLI eval helper for stage counts: `docker compose run --rm -T wpcli wp eval "<board payload stage counts script>"` (sets current user to `codexadmin` before building payload).
+- **Remaining work:** Run browser-based smoke for photo upload/main photo badge/visibility toggle plus full admin happy-path after installing this ZIP; update Asana/PM status once QA is captured.

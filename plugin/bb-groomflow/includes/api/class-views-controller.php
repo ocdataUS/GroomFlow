@@ -301,6 +301,8 @@ class Views_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $view_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache( $view_id );
+
 		return $response;
 	}
 
@@ -351,6 +353,8 @@ class Views_Controller extends REST_Controller {
 			);
 		}
 
+		$this->plugin->visit_service()->flush_cache( $view_id );
+
 		return $this->prepare_item_for_response( $view, $request );
 	}
 
@@ -374,6 +378,8 @@ class Views_Controller extends REST_Controller {
 
 		$this->wpdb->delete( $this->tables['views'], array( 'id' => $view_id ), array( '%d' ) );
 		$this->wpdb->delete( $this->tables['view_stages'], array( 'view_id' => $view_id ), array( '%d' ) );
+
+		$this->plugin->visit_service()->flush_cache( $view_id );
 
 		$response = array(
 			'deleted'  => true,

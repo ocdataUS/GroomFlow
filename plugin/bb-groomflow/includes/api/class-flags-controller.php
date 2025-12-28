@@ -325,6 +325,8 @@ class Flags_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $flag_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $response;
 	}
 
@@ -372,6 +374,8 @@ class Flags_Controller extends REST_Controller {
 			);
 		}
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $this->prepare_item_for_response( $flag, $request );
 	}
 
@@ -394,6 +398,8 @@ class Flags_Controller extends REST_Controller {
 		}
 
 		$this->wpdb->delete( $this->tables['flags'], array( 'id' => $flag_id ), array( '%d' ) );
+
+		$this->plugin->visit_service()->flush_cache();
 
 		$response = array(
 			'deleted'  => true,

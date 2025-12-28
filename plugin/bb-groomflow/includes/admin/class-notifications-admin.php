@@ -7,6 +7,7 @@
 
 namespace BBGF\Admin;
 
+use BBGF\Bootstrap\Admin_Menu_Service;
 use BBGF\Plugin;
 use wpdb;
 
@@ -50,12 +51,13 @@ class Notifications_Admin implements Admin_Page_Interface {
 	 */
 	public function register_menu(): void {
 		add_submenu_page(
-			'bbgf-dashboard',
+			Admin_Menu_Service::MENU_SLUG,
 			__( 'Notifications', 'bb-groomflow' ),
 			__( 'Notifications', 'bb-groomflow' ),
 			'bbgf_manage_notifications', // phpcs:ignore WordPress.WP.Capabilities.Unknown -- custom capability defined by plugin.
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			50
 		);
 	}
 

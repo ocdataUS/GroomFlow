@@ -331,6 +331,8 @@ class Services_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $service_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $response;
 	}
 
@@ -392,6 +394,8 @@ class Services_Controller extends REST_Controller {
 			);
 		}
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $this->prepare_item_for_response( $service, $request );
 	}
 
@@ -415,6 +419,8 @@ class Services_Controller extends REST_Controller {
 
 		$this->wpdb->delete( $this->tables['services'], array( 'id' => $service_id ), array( '%d' ) );
 		$this->wpdb->delete( $this->tables['service_package_items'], array( 'service_id' => $service_id ), array( '%d' ) );
+
+		$this->plugin->visit_service()->flush_cache();
 
 		$response = array(
 			'deleted'  => true,

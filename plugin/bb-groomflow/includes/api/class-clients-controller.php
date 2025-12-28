@@ -302,6 +302,8 @@ class Clients_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $client_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $response;
 	}
 
@@ -344,6 +346,8 @@ class Clients_Controller extends REST_Controller {
 		);
 
 		$client = $this->get_client( $client_id );
+
+		$this->plugin->visit_service()->flush_cache();
 
 		return $this->prepare_item_for_response( $client, $request );
 	}

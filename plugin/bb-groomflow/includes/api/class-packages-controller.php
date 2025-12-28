@@ -345,6 +345,8 @@ class Packages_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $package_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $response;
 	}
 
@@ -410,6 +412,8 @@ class Packages_Controller extends REST_Controller {
 			);
 		}
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $this->prepare_item_for_response( $package, $request );
 	}
 
@@ -433,6 +437,8 @@ class Packages_Controller extends REST_Controller {
 
 		$this->wpdb->delete( $this->tables['service_packages'], array( 'id' => $package_id ), array( '%d' ) );
 		$this->wpdb->delete( $this->tables['service_package_items'], array( 'package_id' => $package_id ), array( '%d' ) );
+
+		$this->plugin->visit_service()->flush_cache();
 
 		$response = array(
 			'deleted'  => true,

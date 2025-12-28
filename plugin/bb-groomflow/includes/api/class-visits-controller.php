@@ -114,6 +114,31 @@ class Visits_Controller extends REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/' . $this->rest_base . '/intake-search',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'search_intake' ),
+					'permission_callback' => array( $this, 'create_item_permissions_check' ),
+					'args'                => array(
+						'query' => array(
+							'description' => __( 'Search across clients and guardians.', 'bb-groomflow' ),
+							'type'        => 'string',
+						),
+						'limit' => array(
+							'description' => __( 'Maximum number of matches to return.', 'bb-groomflow' ),
+							'type'        => 'integer',
+							'default'     => 10,
+							'minimum'     => 1,
+							'maximum'     => 20,
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			sprintf( '/%s/(?P<id>\\d+)', $this->rest_base ),
 			array(
 				array(
@@ -162,9 +187,35 @@ class Visits_Controller extends REST_Controller {
 					'callback'            => array( $this, 'add_photo' ),
 					'permission_callback' => array( $this, 'add_photo_permissions_check' ),
 					'args'                => array(
-						'attachment_id' => array(
+						'attachment_id'       => array(
 							'type'        => 'integer',
 							'description' => __( 'Existing attachment ID to associate.', 'bb-groomflow' ),
+						),
+						'visible_to_guardian' => array(
+							'type'        => 'boolean',
+							'description' => __( 'Whether the photo can be shown to guardians.', 'bb-groomflow' ),
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			sprintf( '/%s/(?P<id>\\d+)/photo/(?P<photo_id>\\d+)', $this->rest_base ),
+			array(
+				array(
+					'methods'             => WP_REST_Server::EDITABLE,
+					'callback'            => array( $this, 'update_photo' ),
+					'permission_callback' => array( $this, 'add_photo_permissions_check' ),
+					'args'                => array(
+						'visible_to_guardian' => array(
+							'type'        => 'boolean',
+							'description' => __( 'Whether the photo can be shown to guardians.', 'bb-groomflow' ),
+						),
+						'is_primary'          => array(
+							'type'        => 'boolean',
+							'description' => __( 'Mark the photo as the primary visit image.', 'bb-groomflow' ),
 						),
 					),
 				),
@@ -358,9 +409,10 @@ class Visits_Controller extends REST_Controller {
 		$visit = $this->visit_service->get_visit(
 			$visit_id,
 			array(
-				'mask_guardian'   => $should_mask_guardian,
-				'mask_sensitive'  => $mask_sensitive_fields,
-				'include_history' => ! $is_public,
+				'mask_guardian'    => $should_mask_guardian,
+				'mask_sensitive'   => $mask_sensitive_fields,
+				'include_history'  => ! $is_public,
+				'include_previous' => ! $is_public,
 			)
 		);
 
@@ -381,6 +433,26 @@ class Visits_Controller extends REST_Controller {
 		}
 
 		return rest_ensure_response( $visit );
+	}
+
+	/**
+	 * Intake search across clients and guardians.
+	 *
+	 * @param WP_REST_Request $request Request instance.
+	 * @return WP_REST_Response
+	 */
+	public function search_intake( $request ) {
+		$query = (string) $request->get_param( 'query' );
+		$limit = (int) $request->get_param( 'limit' );
+		$limit = max( 1, min( 20, $limit ) );
+
+		$results = $this->visit_service->search_intake_entities( $query, $limit );
+
+		return rest_ensure_response(
+			array(
+				'items' => $results,
+			)
+		);
 	}
 
 	/**
@@ -447,7 +519,7 @@ class Visits_Controller extends REST_Controller {
 			return $validated;
 		}
 
-		$result = $this->visit_service->update_visit( $visit_id, $validated['visit'], $validated['services'], $validated['flags'] );
+		$result = $this->visit_service->update_visit( $visit_id, $validated['visit'], $validated['services'], $validated['flags'], $current_row );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -507,8 +579,10 @@ class Visits_Controller extends REST_Controller {
 			);
 		}
 
-		$visit_id = (int) $request->get_param( 'id' );
-		$files    = $request->get_file_params();
+		$visit_id            = (int) $request->get_param( 'id' );
+		$files               = $request->get_file_params();
+		$visible             = $request->get_param( 'visible_to_guardian' );
+		$visible_to_guardian = null === $visible ? true : (bool) $visible;
 
 		if ( isset( $files['file'] ) && ! empty( $files['file']['name'] ) ) {
 			if ( ! current_user_can( 'upload_files' ) ) {
@@ -519,7 +593,7 @@ class Visits_Controller extends REST_Controller {
 				);
 			}
 
-			$result = $this->visit_service->attach_uploaded_photo( $visit_id, $files['file'] );
+			$result = $this->visit_service->attach_uploaded_photo( $visit_id, $files['file'], $visible_to_guardian );
 		} else {
 			$attachment_id = (int) $request->get_param( 'attachment_id' );
 			if ( $attachment_id <= 0 ) {
@@ -530,7 +604,7 @@ class Visits_Controller extends REST_Controller {
 				);
 			}
 
-			$result = $this->visit_service->attach_existing_photo( $visit_id, $attachment_id );
+			$result = $this->visit_service->attach_existing_photo( $visit_id, $attachment_id, $visible_to_guardian );
 		}
 
 		if ( is_wp_error( $result ) ) {
@@ -538,6 +612,57 @@ class Visits_Controller extends REST_Controller {
 		}
 
 		return new WP_REST_Response( $result, 201 );
+	}
+
+	/**
+	 * Update photo metadata for a visit.
+	 *
+	 * @param WP_REST_Request $request Request instance.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function update_photo( $request ) {
+		if ( $this->is_public_token_request( $request ) ) {
+			return new WP_Error(
+				'bbgf_visit_public_readonly',
+				__( 'Public board access is read-only.', 'bb-groomflow' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$visit_id   = (int) $request->get_param( 'id' );
+		$photo_id   = (int) $request->get_param( 'photo_id' );
+		$visible    = $request->get_param( 'visible_to_guardian' );
+		$is_primary = $request->get_param( 'is_primary' );
+		$is_public  = $this->is_public_token_request( $request );
+
+		$capability_check = $this->check_capability( 'bbgf_edit_visits' ); // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( is_wp_error( $capability_check ) ) {
+			return $capability_check;
+		}
+
+		$visible_to_guardian = null === $visible ? null : (bool) $visible;
+
+		$response = null;
+
+		if ( null !== $visible_to_guardian ) {
+			$response = $this->visit_service->update_photo_visibility( $visit_id, $photo_id, $visible_to_guardian );
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
+		}
+
+		if ( null !== $is_primary ) {
+			$response = $this->visit_service->set_primary_photo( $visit_id, $photo_id );
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
+		}
+
+		if ( null === $response ) {
+			$response = $this->visit_service->get_visit( $visit_id );
+		}
+
+		return rest_ensure_response( $response );
 	}
 
 	/**
@@ -555,16 +680,16 @@ class Visits_Controller extends REST_Controller {
 			'title'      => 'bbgf_visit',
 			'type'       => 'object',
 			'properties' => array(
-				'id'             => array(
+				'id'              => array(
 					'type'     => 'integer',
 					'context'  => array( 'view', 'edit' ),
 					'readonly' => true,
 				),
-				'client_id'      => array(
+				'client_id'       => array(
 					'type'    => 'integer',
 					'context' => array( 'view', 'edit' ),
 				),
-				'client'         => array(
+				'client'          => array(
 					'type'       => 'object',
 					'context'    => array( 'edit' ),
 					'properties' => array(
@@ -579,11 +704,11 @@ class Visits_Controller extends REST_Controller {
 						),
 					),
 				),
-				'guardian_id'    => array(
+				'guardian_id'     => array(
 					'type'    => array( 'integer', 'null' ),
 					'context' => array( 'view', 'edit' ),
 				),
-				'guardian'       => array(
+				'guardian'        => array(
 					'type'       => 'object',
 					'context'    => array( 'edit' ),
 					'properties' => array(
@@ -601,77 +726,77 @@ class Visits_Controller extends REST_Controller {
 						),
 					),
 				),
-				'view_id'        => array(
+				'view_id'         => array(
 					'type'    => array( 'integer', 'null' ),
 					'context' => array( 'view', 'edit' ),
 				),
-				'current_stage'  => array(
+				'current_stage'   => array(
 					'type'      => 'string',
 					'context'   => array( 'view', 'edit' ),
 					'minLength' => 1,
 				),
-				'status'         => array(
+				'status'          => array(
 					'type'    => 'string',
 					'context' => array( 'view', 'edit' ),
 				),
-				'check_in_at'    => array(
+				'check_in_at'     => array(
 					'type'    => array( 'string', 'null' ),
 					'format'  => 'date-time',
 					'context' => array( 'view', 'edit' ),
 				),
-				'check_out_at'   => array(
+				'check_out_at'    => array(
 					'type'    => array( 'string', 'null' ),
 					'format'  => 'date-time',
 					'context' => array( 'view', 'edit' ),
 				),
-				'assigned_staff' => array(
+				'assigned_staff'  => array(
 					'type'    => array( 'integer', 'null' ),
 					'context' => array( 'view', 'edit' ),
 				),
-				'instructions'   => array(
+				'instructions'    => array(
 					'type'    => 'string',
 					'context' => array( 'view', 'edit' ),
 				),
-				'private_notes'  => array(
+				'private_notes'   => array(
 					'type'    => 'string',
 					'context' => array( 'view', 'edit' ),
 				),
-				'public_notes'   => array(
+				'public_notes'    => array(
 					'type'    => 'string',
 					'context' => array( 'view', 'edit' ),
 				),
-				'services'       => array(
+				'services'        => array(
 					'type'    => 'array',
 					'context' => array( 'view', 'edit' ),
 					'items'   => array(
 						'type' => 'integer',
 					),
 				),
-				'flags'          => array(
+				'flags'           => array(
 					'type'    => 'array',
 					'context' => array( 'view', 'edit' ),
 					'items'   => array(
 						'type' => 'integer',
 					),
 				),
-				'photos'         => array(
+				'photos'          => array(
 					'type'     => 'array',
 					'context'  => array( 'view', 'edit' ),
 					'readonly' => true,
 					'items'    => array(
 						'type'       => 'object',
 						'properties' => array(
-							'id'        => array(
+							'id'                  => array(
 								'type' => 'integer',
 							),
-							'url'       => array(
+							'url'                 => array(
 								'type'   => 'string',
 								'format' => 'uri',
 							),
-							'mime_type' => array(
+							'mime_type'           => array(
 								'type' => 'string',
 							),
-							'thumbnail' => array(
+							'thumbnail'           => array(
 								'type'       => array( 'object', 'null' ),
 								'properties' => array(
 									'url'    => array(
@@ -686,10 +811,43 @@ class Visits_Controller extends REST_Controller {
 									),
 								),
 							),
+							'alt'                 => array(
+								'type' => 'string',
+							),
+							'sizes'               => array(
+								'type' => 'object',
+							),
+							'visible_to_guardian' => array(
+								'type' => 'boolean',
+							),
 						),
 					),
 				),
-				'history'        => array(
+				'previous_visits' => array(
+					'type'     => 'array',
+					'context'  => array( 'view' ),
+					'readonly' => true,
+					'items'    => array(
+						'type'       => 'object',
+						'properties' => array(
+							'id'            => array( 'type' => 'integer' ),
+							'stage'         => array( 'type' => 'string' ),
+							'status'        => array( 'type' => 'string' ),
+							'check_in_at'   => array(
+								'type'   => array( 'string', 'null' ),
+								'format' => 'date-time',
+							),
+							'check_out_at'  => array(
+								'type'   => array( 'string', 'null' ),
+								'format' => 'date-time',
+							),
+							'instructions'  => array( 'type' => 'string' ),
+							'public_notes'  => array( 'type' => 'string' ),
+							'private_notes' => array( 'type' => 'string' ),
+						),
+					),
+				),
+				'history'         => array(
 					'type'     => 'array',
 					'context'  => array( 'view' ),
 					'readonly' => true,
@@ -740,13 +898,13 @@ class Visits_Controller extends REST_Controller {
 						),
 					),
 				),
-				'created_at'     => array(
+				'created_at'      => array(
 					'type'     => array( 'string', 'null' ),
 					'format'   => 'date-time',
 					'context'  => array( 'view' ),
 					'readonly' => true,
 				),
-				'updated_at'     => array(
+				'updated_at'      => array(
 					'type'     => array( 'string', 'null' ),
 					'format'   => 'date-time',
 					'context'  => array( 'view' ),
@@ -771,10 +929,34 @@ class Visits_Controller extends REST_Controller {
 		$visit     = array();
 		$tables    = $this->plugin->get_table_names();
 
+		$guardian_payload = $request->get_param( 'guardian' );
+		$guardian_id      = $request->get_param( 'guardian_id' );
+
+		if ( is_array( $guardian_payload ) ) {
+			if ( null !== $guardian_id ) {
+				$guardian_payload['id'] = (int) $guardian_id;
+			}
+
+			$guardian_result = $this->visit_service->create_or_update_guardian( $guardian_payload );
+			if ( is_wp_error( $guardian_result ) ) {
+				return $guardian_result;
+			}
+
+			$guardian_id = $guardian_result;
+		}
+
 		$client_id = $request->get_param( 'client_id' );
 		if ( null === $client_id ) {
 			$client_payload = $request->get_param( 'client' );
 			if ( is_array( $client_payload ) ) {
+				if ( null === $guardian_id && isset( $client_payload['guardian_id'] ) ) {
+					$guardian_id = $client_payload['guardian_id'];
+				}
+
+				if ( isset( $guardian_id ) && ! isset( $client_payload['guardian_id'] ) ) {
+					$client_payload['guardian_id'] = $guardian_id;
+				}
+
 				$client_result = $this->visit_service->create_or_update_client( $client_payload );
 				if ( is_wp_error( $client_result ) ) {
 					return $client_result;
@@ -810,18 +992,6 @@ class Visits_Controller extends REST_Controller {
 		}
 
 		$visit['client_id'] = $client_id;
-
-		$guardian_id = $request->get_param( 'guardian_id' );
-		if ( null === $guardian_id ) {
-			$guardian_payload = $request->get_param( 'guardian' );
-			if ( is_array( $guardian_payload ) ) {
-				$guardian_result = $this->visit_service->create_or_update_guardian( $guardian_payload );
-				if ( is_wp_error( $guardian_result ) ) {
-					return $guardian_result;
-				}
-				$guardian_id = $guardian_result;
-			}
-		}
 
 		if ( null !== $guardian_id ) {
 			$guardian_id = (int) $guardian_id;
@@ -911,8 +1081,8 @@ class Visits_Controller extends REST_Controller {
 			$visit['timer_elapsed_seconds'] = (int) ( $existing['timer_elapsed_seconds'] ?? 0 );
 		}
 
-		$services = array();
-		$flags    = array();
+		$services = $is_update ? null : array();
+		$flags    = $is_update ? null : array();
 
 		if ( $request->has_param( 'services' ) ) {
 			$services_input = $request->get_param( 'services' );

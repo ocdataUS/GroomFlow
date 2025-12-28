@@ -330,6 +330,8 @@ class Guardians_Controller extends REST_Controller {
 			rest_url( sprintf( '%s/%s/%d', $this->namespace, $this->rest_base, $guardian_id ) )
 		);
 
+		$this->plugin->visit_service()->flush_cache();
+
 		return $response;
 	}
 
@@ -378,6 +380,8 @@ class Guardians_Controller extends REST_Controller {
 				array( 'status' => 500 )
 			);
 		}
+
+		$this->plugin->visit_service()->flush_cache();
 
 		return $this->prepare_item_for_response( $guardian, $request );
 	}

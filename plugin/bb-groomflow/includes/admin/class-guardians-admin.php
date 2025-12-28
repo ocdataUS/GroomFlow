@@ -7,6 +7,7 @@
 
 namespace BBGF\Admin;
 
+use BBGF\Bootstrap\Admin_Menu_Service;
 use BBGF\Plugin;
 use wpdb;
 
@@ -49,12 +50,13 @@ class Guardians_Admin implements Admin_Page_Interface {
 	 */
 	public function register_menu(): void {
 		add_submenu_page(
-			'bbgf-dashboard',
+			Admin_Menu_Service::MENU_SLUG,
 			__( 'Guardians', 'bb-groomflow' ),
 			__( 'Guardians', 'bb-groomflow' ),
 			'bbgf_edit_visits', // phpcs:ignore WordPress.WP.Capabilities.Unknown
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			22
 		);
 	}
 
@@ -116,6 +118,8 @@ class Guardians_Admin implements Admin_Page_Interface {
 			$wpdb->insert( $tables['guardians'], $data, $formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
 
+		$this->plugin->visit_service()->flush_cache();
+
 		wp_safe_redirect( add_query_arg( 'bbgf_message', $message, $this->get_page_url() ) );
 		exit;
 	}
@@ -151,6 +155,8 @@ class Guardians_Admin implements Admin_Page_Interface {
 		$tables = $this->plugin->get_table_names();
 
 		$wpdb->delete( $tables['guardians'], array( 'id' => $guardian_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+
+		$this->plugin->visit_service()->flush_cache();
 
 		wp_safe_redirect( add_query_arg( 'bbgf_message', 'guardian-deleted', remove_query_arg( array( 'action', 'guardian_id', '_wpnonce' ) ) ) );
 		exit;

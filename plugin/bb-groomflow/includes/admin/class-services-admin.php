@@ -7,6 +7,7 @@
 
 namespace BBGF\Admin;
 
+use BBGF\Bootstrap\Admin_Menu_Service;
 use BBGF\Plugin;
 
 /**
@@ -49,12 +50,13 @@ class Services_Admin implements Admin_Page_Interface {
 	 */
 	public function register_menu(): void {
 		add_submenu_page(
-			'bbgf-dashboard',
+			Admin_Menu_Service::MENU_SLUG,
 			__( 'Services', 'bb-groomflow' ),
 			__( 'Services', 'bb-groomflow' ),
 			'bbgf_manage_services', // phpcs:ignore WordPress.WP.Capabilities.Unknown
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			30
 		);
 	}
 
@@ -166,6 +168,8 @@ class Services_Admin implements Admin_Page_Interface {
 			$wpdb->insert( $tables['services'], $data, $insert_formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
 
+		$this->plugin->visit_service()->flush_cache();
+
 		wp_safe_redirect( add_query_arg( 'bbgf_message', $message, $this->get_page_url() ) );
 		exit;
 	}
@@ -201,6 +205,8 @@ class Services_Admin implements Admin_Page_Interface {
 		$tables = $this->plugin->get_table_names();
 		$wpdb->delete( $tables['services'], array( 'id' => $service_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->delete( $tables['service_package_items'], array( 'service_id' => $service_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+
+		$this->plugin->visit_service()->flush_cache();
 
 		wp_safe_redirect(
 			add_query_arg(

@@ -1,0 +1,8 @@
+# Breadcrumb
+- **Task asked:** Release readiness checklist & marketplace compliance (Asana `1212222481424232`)
+- **Plan:** Refresh runbooks with explicit release gating (ZIP validation, uninstall safeguards, seed/demo tooling, QA artifacts, marketplace compliance, PM review/due date checks) and reconfirm the packaged install + baseline QA on Docker WP.
+- **Files changed:** AGENTS.md; TECH_READINESS.md; docs/ASANA_TOOLBOX.md; docs/REFACTOR_LOG.md; qa/QA_LOG.md; this breadcrumb.
+- **Commands executed:** `ocasana tasks list/show/comment/update/move --profile ocdata` to lock/move the task; `git switch -c refactor/release-readiness`; `bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow.zip`; `docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow.zip --force --activate`; `docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8 --force`; `qa-phpcs plugin/bb-groomflow`; manual admin happy-path (WP-CLI updates for Clients→Settings) piped to artifact.
+- **Tests & results:** `qa-phpcs plugin/bb-groomflow` → `/opt/qa/artifacts/phpcs-1764705101.txt` (PASS); Manual admin happy-path (WP-CLI Clients→Settings edits) → `/opt/qa/artifacts/manual-admin-happy-path-20251202T195200.txt` (PASS).
+- **Tips & Tricks:** Release checklist now explicitly calls out uninstall safeguards, demo seeding, artifact logging, and Asana PM Review/due-date checks; the smoke script already handles ZIP install + reseed if you prefer automation.
+- **Remaining work:** Share doc deltas + QA artifacts on Asana task `1212222481424232` and keep an eye on the PM review items for S11–S12 dependencies.
