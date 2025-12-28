@@ -78,7 +78,7 @@ $channel     = $current['channel'] ?? 'email';
 										<option value="email" <?php selected( 'email', $channel ); ?>><?php esc_html_e( 'Email', 'bb-groomflow' ); ?></option>
 									</select>
 									<input type="hidden" name="channel" value="email" />
-									<p class="description"><?php esc_html_e( 'Email is supported today. Additional channels arrive in later sprints.', 'bb-groomflow' ); ?></p>
+									<p class="description"><?php esc_html_e( 'Email is supported today. Additional channels can be added via hooks.', 'bb-groomflow' ); ?></p>
 								</td>
 							</tr>
 							<tr>

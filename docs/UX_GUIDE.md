@@ -21,7 +21,7 @@
 ## Visual System
 - Columns:
   - Sticky headers with stage label + capacity badge.
-  - Background subtle gradient per stage, optionally set via settings/Elementor.
+  - Background subtle gradient per stage, optionally set via view/settings.
 - Cards:
   - Photo thumbnail left; rest of content stacked (name, timer, services badges).
   - Behavior flags as colored pill chips with emoji + tooltip.
@@ -31,7 +31,7 @@
   - Display “Last updated” timestamp and gentle pulse on refresh.
 
 ## Accessibility Checklist
-- Contrast check each Elementor style preset (AA minimum).
+- Contrast check each board theme/config (AA minimum).
 - Focus indicators clearly visible on cards, buttons, modal controls.
 - Provide screen-reader instructions hidden in DOM for board usage.
 - Ensure announcements for stage moves, timer warnings, capacity alerts using `wp.a11y.speak`.

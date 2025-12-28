@@ -17,7 +17,7 @@ $messages = array(
 ?>
 <div class="wrap bbgf-settings-admin">
 	<h1 class="wp-heading-inline"><?php esc_html_e( 'GroomFlow Settings', 'bb-groomflow' ); ?></h1>
-	<p class="description"><?php esc_html_e( 'Set global defaults for the board experience, lobby displays, notifications, and Elementor presets.', 'bb-groomflow' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Set global defaults for the board experience, lobby displays, and notifications.', 'bb-groomflow' ); ?></p>
 
 	<?php if ( ! empty( $message ) && isset( $messages[ $message ] ) ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $messages[ $message ] ); ?></p></div>
@@ -125,7 +125,7 @@ $messages = array(
 							<input type="checkbox" id="bbgf-notify-enable" name="settings[notifications][enable_stage_notifications]" value="1" <?php checked( ! empty( $settings['notifications']['enable_stage_notifications'] ) ); ?> />
 							<?php esc_html_e( 'Enable stage-triggered email notifications', 'bb-groomflow' ); ?>
 						</label>
-						<p class="description"><?php esc_html_e( 'Templates and routing arrive with the notifications sprint.', 'bb-groomflow' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Templates and routing for stage notifications are managed here.', 'bb-groomflow' ); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -157,54 +157,12 @@ $messages = array(
 				<th scope="row"><label for="bbgf-brand-accent"><?php esc_html_e( 'Accent color', 'bb-groomflow' ); ?></label></th>
 				<td>
 					<input type="text" class="bbgf-color-picker" id="bbgf-brand-accent" name="settings[branding][accent_color]" value="<?php echo esc_attr( $settings['branding']['accent_color'] ); ?>" data-default-color="#0ea5e9" />
-					<p class="description"><?php esc_html_e( 'Accent tint used for highlights within Elementor defaults and dashboard previews.', 'bb-groomflow' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Accent tint used for highlights within dashboard previews.', 'bb-groomflow' ); ?></p>
 				</td>
 			</tr>
 				<tr>
 					<th scope="row"><label for="bbgf-brand-font"><?php esc_html_e( 'Font family', 'bb-groomflow' ); ?></label></th>
 					<td><input type="text" class="regular-text" id="bbgf-brand-font" name="settings[branding][font_family]" value="<?php echo esc_attr( $settings['branding']['font_family'] ); ?>" placeholder="Inter, sans-serif" /></td>
-				</tr>
-			</tbody>
-		</table>
-
-		<h2><?php esc_html_e( 'Elementor Defaults', 'bb-groomflow' ); ?></h2>
-		<table class="form-table" role="presentation">
-			<tbody>
-				<tr>
-					<th scope="row"><label for="bbgf-elementor-card-style"><?php esc_html_e( 'Card preset', 'bb-groomflow' ); ?></label></th>
-					<td>
-						<select id="bbgf-elementor-card-style" name="settings[elementor][card_style]">
-							<?php
-							$card_style    = $settings['elementor']['card_style'];
-							$style_options = array(
-								'calm'    => __( 'Calm neutral', 'bb-groomflow' ),
-								'vibrant' => __( 'Vibrant energy', 'bb-groomflow' ),
-								'minimal' => __( 'Minimal contrast', 'bb-groomflow' ),
-							);
-							foreach ( $style_options as $value => $label ) :
-								?>
-								<option value="<?php echo esc_attr( $value ); ?>" <?php selected( $card_style, $value ); ?>><?php echo esc_html( $label ); ?></option>
-							<?php endforeach; ?>
-						</select>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row"><label for="bbgf-elementor-stage"><?php esc_html_e( 'Stage label format', 'bb-groomflow' ); ?></label></th>
-					<td>
-						<select id="bbgf-elementor-stage" name="settings[elementor][stage_label_format]">
-							<?php
-							$label_format   = $settings['elementor']['stage_label_format'];
-							$format_options = array(
-								'name_timer' => __( 'Stage name + timer', 'bb-groomflow' ),
-								'name_only'  => __( 'Stage name only', 'bb-groomflow' ),
-								'timer_only' => __( 'Timer indicator only', 'bb-groomflow' ),
-							);
-							foreach ( $format_options as $value => $label ) :
-								?>
-								<option value="<?php echo esc_attr( $value ); ?>" <?php selected( $label_format, $value ); ?>><?php echo esc_html( $label ); ?></option>
-							<?php endforeach; ?>
-						</select>
-					</td>
 				</tr>
 			</tbody>
 		</table>

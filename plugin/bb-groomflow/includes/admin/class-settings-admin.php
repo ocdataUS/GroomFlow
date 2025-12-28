@@ -7,6 +7,7 @@
 
 namespace BBGF\Admin;
 
+use BBGF\Bootstrap\Admin_Menu_Service;
 use BBGF\Plugin;
 
 /**
@@ -48,12 +49,13 @@ class Settings_Admin implements Admin_Page_Interface {
 	 */
 	public function register_menu(): void {
 		add_submenu_page(
-			'bbgf-dashboard',
+			Admin_Menu_Service::MENU_SLUG,
 			__( 'Settings', 'bb-groomflow' ),
 			__( 'Settings', 'bb-groomflow' ),
 			'bbgf_manage_settings', // phpcs:ignore WordPress.WP.Capabilities.Unknown
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			70
 		);
 	}
 
@@ -75,6 +77,7 @@ class Settings_Admin implements Admin_Page_Interface {
 
 		update_option( 'bbgf_settings', $settings, false );
 		$this->plugin->refresh_settings_cache();
+		$this->plugin->visit_service()->flush_cache();
 
 		wp_safe_redirect( add_query_arg( 'bbgf_message', 'settings-saved', $this->get_page_url() ) );
 		exit;
@@ -138,11 +141,10 @@ class Settings_Admin implements Admin_Page_Interface {
 		$defaults = $this->plugin->get_default_settings();
 		$input    = is_array( $input ) ? $input : array();
 
-		$board     = isset( $input['board'] ) && is_array( $input['board'] ) ? $input['board'] : array();
-		$lobby     = isset( $input['lobby'] ) && is_array( $input['lobby'] ) ? $input['lobby'] : array();
-		$notify    = isset( $input['notifications'] ) && is_array( $input['notifications'] ) ? $input['notifications'] : array();
-		$branding  = isset( $input['branding'] ) && is_array( $input['branding'] ) ? $input['branding'] : array();
-		$elementor = isset( $input['elementor'] ) && is_array( $input['elementor'] ) ? $input['elementor'] : array();
+		$board    = isset( $input['board'] ) && is_array( $input['board'] ) ? $input['board'] : array();
+		$lobby    = isset( $input['lobby'] ) && is_array( $input['lobby'] ) ? $input['lobby'] : array();
+		$notify   = isset( $input['notifications'] ) && is_array( $input['notifications'] ) ? $input['notifications'] : array();
+		$branding = isset( $input['branding'] ) && is_array( $input['branding'] ) ? $input['branding'] : array();
 
 		$show_client_photo = ! empty( $lobby['show_client_photo'] );
 
@@ -174,10 +176,6 @@ class Settings_Admin implements Admin_Page_Interface {
 				'primary_color' => $this->sanitize_color( $branding['primary_color'] ?? $defaults['branding']['primary_color'] ),
 				'accent_color'  => $this->sanitize_color( $branding['accent_color'] ?? $defaults['branding']['accent_color'] ),
 				'font_family'   => sanitize_text_field( $branding['font_family'] ?? $defaults['branding']['font_family'] ),
-			),
-			'elementor'     => array(
-				'card_style'         => sanitize_key( $elementor['card_style'] ?? $defaults['elementor']['card_style'] ),
-				'stage_label_format' => sanitize_key( $elementor['stage_label_format'] ?? $defaults['elementor']['stage_label_format'] ),
 			),
 		);
 

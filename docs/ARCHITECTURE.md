@@ -14,13 +14,12 @@ plugin/bb-groomflow/
 │   ├── admin/                # admin menu, list tables, forms
 │   ├── data/                 # repositories/services for CRUD logic
 │   ├── models/               # value objects (Client, Visit, Service, View)
-│   ├── elementor/            # widget registration + controls
 │   └── cli/                  # WP-CLI commands
 ├── assets/
 │   ├── css/                  # admin + front styles
-│   └── js/                   # board app bundle, elementor scripts
+│   └── js/                   # board app bundle
 ├── languages/                # translation files
-└── uninstall.php             # cleanup hook (future)
+└── uninstall.php             # cleanup hook
 ```
 
 ## Data Flow
@@ -46,13 +45,7 @@ plugin/bb-groomflow/
    - Drag/drop triggers REST `move` endpoint; optimistic updates preview change.
    - Modal editor fetches visit detail on open (lazy load), submitting via REST `PATCH`.
 
-4. **Elementor Integration**
-   - Widget registers controls in `get_style_controls` / `get_content_controls`.
-   - Renders shortcode internally with dynamic arguments.
-   - CSS variables expose Elementor styling to the board app (e.g., `--bbgf-card-bg`).
-   - Preview mode enqueues sample data to keep the canvas fast.
-
-5. **Notifications & Reporting**
+4. **Notifications & Reporting**
    - Stage move service dispatches notification jobs (email now, hooks for later).
    - Reports use read-only repository methods with aggregation queries.
    - CSV/PDF exports hit dedicated REST routes with nonce auth.
@@ -81,9 +74,9 @@ plugin/bb-groomflow/
 
 ## Build & Deployment
 
-- JS built via `npm run build` (configured once sprint work begins).
+- JS built via `npm run build` before packaging.
 - PHPCS via `vendor/bin/phpcs --standard=phpcs.xml.dist plugin/bb-groomflow`.
 - Packaged ZIP: `bash scripts/build_plugin_zip.sh` → `build/bb-groomflow-<version>.zip`.
 - Docker QA: `bash scripts/load_prod_snapshot.sh` to mirror production, then install ZIP using WP-CLI inside the container.
 
-Keep this document updated as new modules or integration points are introduced.
+Keep this document updated as modules or integration points change.

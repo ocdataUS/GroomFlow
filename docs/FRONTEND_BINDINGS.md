@@ -1,6 +1,6 @@
 # Front-end Bindings
 
-Selectors used by the GroomFlow board and modal. Keep these stable so the JS app, Elementor widget, and theming stay in sync.
+Selectors used by the GroomFlow board and modal. Keep these stable so the JS app and theming stay in sync.
 
 ## Board Container
 - `#bbgf-board-root` — top-level wrapper for the shortcode/widget output.

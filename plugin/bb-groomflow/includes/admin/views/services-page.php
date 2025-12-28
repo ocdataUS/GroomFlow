@@ -94,7 +94,7 @@ $tags_value   = $current_row['tags'] ?? '';
 						<th scope="row"><label for="bbgf-service-tags"><?php esc_html_e( 'Tags', 'bb-groomflow' ); ?></label></th>
 						<td>
 							<input type="text" class="regular-text" id="bbgf-service-tags" name="tags" value="<?php echo esc_attr( $tags_value ); ?>" />
-							<p class="description"><?php esc_html_e( 'Comma-separated descriptors (e.g., Bath, Deshed, Premium). Used for filtering in later sprints.', 'bb-groomflow' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Comma-separated descriptors (e.g., Bath, Deshed, Premium). Used for filtering and reporting.', 'bb-groomflow' ); ?></p>
 						</td>
 					</tr>
 					<tr>

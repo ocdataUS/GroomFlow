@@ -4,7 +4,7 @@
 
 > **Terminology:** All UI copy, documentation, and new code must refer to the animal being groomed as the “Client.” Dogs remain our primary example data, but the platform needs to feel species-agnostic (cats, bunnies, miniature ponies, etc.). Back-end identifiers, REST routes, and database schema should migrate toward `client` naming in upcoming work.
 
-> **Living document:** Mike iterates quickly. When requirements shift, update this spec, roadmap, and sprint docs immediately so future agents stay aligned.
+> **Living document:** Mike iterates quickly. When requirements shift, update this spec and breadcrumbs immediately so future agents stay aligned.
 
 ---
 
@@ -34,13 +34,10 @@
 - Card summary shows client photo, name, drop-off time, service icons, flags, guardian initials; clicking opens a modal editor.
 - Modal tabs for Summary, Services, Notes, History, Photos, with inline editing and audit trail preview.
 
-### 5. Elementor & Shortcode Delivery
+### 5. Board Delivery
 - Shortcode `[bbgf_board]` supports `view`, `allow_view_switcher`, `refresh`, and public token arguments.
-- Elementor widget exposes deep control:
-  - Content: choose view, toggle switcher, mask guardian data, set refresh interval.
-  - Style: granular typography, spacing, colors for columns/cards/headers, conditional styling (overdue, flagged, capacity).
-  - Advanced: repeater to define metadata order, custom badge templates, optional HTML slots for advanced layouts.
-- All controls are intuitive for non-developers; defaults ship with a modern neutral theme.
+- Internal boards can display a compact view switcher for staff; lobby/display boards use tokens and auto-refresh cadence.
+- Styling and metadata ordering follow view/settings defaults; CSS variables keep theme overrides consistent.
 
 ### 6. Notifications & Reporting
 - Stage-triggered notifications managed in admin with HTML templates and merge tags (client name, guardian, stage, notes). Each trigger supports sending to the guardian, a custom distribution list, or both. The template editor surfaces a merge-tag helper so non-technical admins always know which placeholders are available.
@@ -66,7 +63,7 @@
 
 ### Operational Guardrails
 - **Slice ritual:** Every slice must follow `AGENTS.md` — branch from `dev`, log the slice, build the ZIP, install it inside Docker, reseed demo data if needed, run `qa-phpcs plugin/bb-groomflow`, and perform the full admin happy-path (Clients, Guardians, Services, Packages, Flags, Views, Settings). Artifact paths from those runs live under `/opt/qa/artifacts/` and must be recorded in `docs/REFACTOR_LOG.md` + `qa/QA_LOG.md`.
-- **Bootstrap services:** The plugin bootstrap is now modular (`BBGF\Bootstrap\Assets_Service`, `Admin_Menu_Service`, `Rest_Service`, `Cli_Service`). Public helpers such as `bbgf()->bootstrap_elementor()` and `bbgf()->get_placeholder_board_markup()` proxy to those services—wrappers stay stable even as internals change.
+- **Bootstrap services:** The plugin bootstrap is modular (`BBGF\Bootstrap\Assets_Service`, `Admin_Menu_Service`, `Rest_Service`, `Cli_Service`). Public helpers such as `bbgf()->get_placeholder_board_markup()` proxy to those services—wrappers stay stable even as internals change.
 - **CLI + seed data:** `wp bbgf visits seed-demo --count=<n> [--force]` seeds realistic demo visits using prepared statements and explicit timestamps so QA boards immediately show elapsed timers. Future CLI helpers must follow the same sanitization and logging patterns introduced in `includes/cli/class-visits-command.php`.
 - **Uninstall safeguards:** `uninstall.php` drops every GroomFlow table and `bbgf_*` option/site option unless `BBGF_PRESERVE_DATA_ON_UNINSTALL` is set or `bbgf_allow_uninstall_cleanup` returns false. Document the intended behavior before running uninstall QA to avoid accidental data loss.
 - **No live mounts:** Zip→copy→install is the only supported deployment path. Mounting the plugin directory into Docker bypasses activation hooks and invalidates QA.
@@ -131,9 +128,9 @@ Option `bbgf_settings` includes:
 - Global defaults (thresholds, capacity limits, polling interval, branding presets).
 - Notification defaults (from email, subject prefix, enable stage triggers).
 - Lobby options (mask guardian names, show client photo, full-screen button).
-- Elementor defaults (card style preset, stage label format).
+- Board defaults drive style presets and stage labeling.
 
-Settings localized to JS (`wp_localize_script`) and Elementor widget controls.
+Settings are localized to JS for board renders.
 
 ---
 
@@ -147,20 +144,3 @@ Settings localized to JS (`wp_localize_script`) and Elementor widget controls.
 - Quick access toolbar for staff: search client name, filter by flag/service, manual refresh button.
 
 ---
-
-## Milestones (Sprints)
-
-1. **Sprint 0 – Enhanced Bootstrap**  
-   Admin shell, roles/caps, asset pipeline, REST namespace stub, Elementor widget skeleton, placeholder Kanban.
-2. **Sprint 1 – Data Foundations & Admin CRUD**  
-   Custom tables, CRUD UIs for clients/guardians/services/packages/flags/views, settings page with thresholds/polling, seed data using the client-first terminology.
-3. **Sprint 2 – REST & Business Logic**  
-   Intake endpoints, stage move logic, history logging, public token support, CLI scaffolds, capability enforcement.
-4. **Sprint 3 – Kanban UX & Modal Editing**  
-   Implement fully interactive board with drag/drop, timers, capacity alerts, modal editor, polling engine, lobby mode.
-5. **Sprint 4 – Elementor & Shortcode Polish**  
-   Deep Elementor controls, view switcher, metadata repeater, conditional styling, shortcode parity, public/private display options.
-6. **Sprint 5 – Notifications, Reporting, QA**  
-   Stage-triggered emails, notification templates, KPI dashboard, CSV/PDF export, accessibility/perf polish, automated smoke tests.
-
-Each sprint requires: updated docs, QA artifacts via `QA_TOOLBELT.md`, packaged ZIP installed in Docker, breadcrumb entry, and CHANGELOG update.

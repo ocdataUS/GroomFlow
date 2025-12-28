@@ -42,6 +42,13 @@ All artifacts land in: `/opt/qa/artifacts`.
 
 ## WordPress QA Commands
 
+- **QA smoke (build/install + board + notifications + stats)**
+  ```bash
+  bash scripts/qa_smoke.sh                       # full run (build ZIP, install in Docker, seed, PHPCS, board/stage move/stats smoke)
+  SKIP_ASSET_BUILD=1 bash scripts/qa_smoke.sh    # reuse existing bundles
+  # → /opt/qa/artifacts/qa-smoke-<timestamp>.txt plus PHPCS artifact
+  ```
+
 - **PHPCS report → artifact** (WordPress standard)
   ```bash
   qa-phpcs /path/to/theme-or-plugin
@@ -87,7 +94,7 @@ PREFIX=$(docker compose run --rm -T wpcli wp config get table_prefix | tr -d '\r
 } | tee "$ART"
 ```
 
-Add a short markdown checklist (“Clients ✅”, “Settings ✅”) at the top of the artifact so reviewers can confirm every admin surface was exercised. Reference `$ART` inside `docs/REFACTOR_LOG.md`, `qa/QA_LOG.md`, and the breadcrumb for the slice.
+Add a short markdown checklist (“Clients ✅”, “Settings ✅”) at the top of the artifact so reviewers can confirm every admin surface was exercised. Reference `$ART` inside `qa/QA_LOG.md` and the breadcrumb for the slice.
 
 ---
 
@@ -239,15 +246,15 @@ qa-trivy-image node:22        # Trivy image scan → text report
 ## Tips & Tricks
 
 - Always finish work by rebuilding the plugin ZIP (`bash scripts/build_plugin_zip.sh`) and reinstalling it in Docker WP so the active environment matches your branch.
+- Intake modal is tabbed (search/guardian/client/visit); switch tabs via `data-role="bbgf-intake-tab"` before filling fields, and use the selected-chip under the tab bar to clear/reseed quickly.
+- Intake search now fires after 2+ characters; empty/short queries keep results blank to avoid loading huge guardian/client lists.
 - Running `qa-phpcbf` against multiple files can dump report output into the target file; run it per-file or use PHPCS manually to avoid accidental overwrites.
 - Export `WPCS_DIR=/usr/share/php/PHP_CodeSniffer/Standards` (or your install path) before running `qa-phpcs` so the repo `phpcs.xml.dist` resolves WordPress Coding Standards without errors.
 - Run `npm run build` before packaging or QA runs so Vite regenerates `plugin/bb-groomflow/assets/build/*`; missing bundles break enqueues and cause placeholder board regressions.
-- Elementor sanity check: if the board widget disappears, run `wp eval 'include_once WP_PLUGIN_DIR . "/bb-groomflow/bb-groomflow.php"; bbgf()->bootstrap_elementor(); $widgets = \\Elementor\\Plugin::instance()->widgets_manager->get_widget_types(); echo in_array("bbgf_board", array_keys($widgets)) ? "FOUND" : "NOT FOUND";'` to confirm it registers before debugging further.
 - When installing a freshly built ZIP into Docker WP, copy it into `/var/www/html/` (shared volume) first; paths in `/tmp` live on the container layer, so the `wpcli` service cannot read them.
 - Handy shortcut: `docker compose cp ../build/<zip> wordpress:/var/www/html/` drops the ZIP into the container before running `wp plugin install … --force --activate`.
 - Need to smoke-test REST endpoints? In Docker WP-CLI run `wp eval 'wp_set_current_user( get_user_by("login","codexadmin")->ID ); $request = new WP_REST_Request("GET","/bb-groomflow/v1/guardians"); $response = rest_do_request( $request ); print_r( $response->get_data() );'` to hit routes without juggling cookies or nonces.
 - To validate lobby masking quickly, flip a view with `docker compose run --rm -T wpcli wp db query "UPDATE wp_7ptz4bz8ht_bb_views SET type = 'lobby', show_guardian = 0 WHERE id = 1"`; run the matching update to restore the row when finished.
 - Need to probe private helpers or complex flows without a browser? Pipe a temporary PHP script into the wpcli container (`docker compose run --rm -T --user root wpcli sh -c 'cat > /var/www/html/check.php' <<'PHP' … PHP`) and call it via `wp eval-file`, then clean it up with another `rm` run.
 - Alignment warnings from WPCS? Run `qa-phpcbf` on the specific file to normalise equals/arrow spacing without formatting the whole plugin.
-- Lobby/kiosk boards now auto-expand to full width when the view type is set accordingly; if Elementor still shows theme chrome, switch the page template to **Elementor Canvas** so the display board fills the screen without header/footer clutter.
 - Need sample visits fast? After installing the plugin, run `docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8` (add `--force` to reset) to populate every view with demo guardians/clients before QA.

@@ -7,9 +7,7 @@
 
 namespace BBGF\Bootstrap;
 
-use BBGF\Elementor\Board_Widget;
 use BBGF\Plugin;
-use Elementor\Plugin as ElementorPlugin;
 
 /**
  * Handles board asset registration, localization, and placeholder rendering.
@@ -28,20 +26,6 @@ class Assets_Service {
 	private Plugin $plugin;
 
 	/**
-	 * Tracks whether the Elementor config stub has been injected.
-	 *
-	 * @var bool
-	 */
-	private bool $elementor_config_stub_added = false;
-
-	/**
-	 * Tracks whether Elementor hooks are registered.
-	 *
-	 * @var bool
-	 */
-	private bool $elementor_bootstrapped = false;
-
-	/**
 	 * Constructor.
 	 *
 	 * @param Plugin $plugin Plugin instance.
@@ -56,12 +40,6 @@ class Assets_Service {
 	public function register(): void {
 		add_action( 'init', array( $this, 'register_assets' ) );
 		add_shortcode( 'bbgf_board', array( $this, 'render_board_shortcode' ) );
-
-		if ( did_action( 'elementor/loaded' ) ) {
-			$this->bootstrap_elementor();
-		} else {
-			add_action( 'elementor/loaded', array( $this, 'bootstrap_elementor' ) );
-		}
 	}
 
 	/**
@@ -125,25 +103,6 @@ class Assets_Service {
 	public function enqueue_board_assets( array $context = array(), ?array $prebuilt_settings = null ): array {
 		$board_settings = $prebuilt_settings ?? $this->get_board_bootstrap_settings( $context );
 
-		if (
-			! $this->elementor_config_stub_added
-			&& (
-				wp_script_is( 'elementor-frontend', 'registered' )
-				|| wp_script_is( 'elementor-frontend', 'enqueued' )
-			)
-		) {
-			$stub = 'window.elementorFrontendConfig = window.elementorFrontendConfig || {' .
-				'environment: { mode: "production", isScriptDebug: false, is_rtl: false },' .
-				'i18n: {},' .
-				'urls: {},' .
-				'settings: { page: [], general: [] },' .
-				'kit: {},' .
-				'post: {}' .
-			'};';
-			wp_add_inline_script( 'elementor-frontend', $stub, 'before' );
-			$this->elementor_config_stub_added = true;
-		}
-
 		if ( wp_script_is( self::BOARD_ASSET_HANDLE, 'registered' ) ) {
 			wp_localize_script( self::BOARD_ASSET_HANDLE, 'bbgfBoardSettings', $board_settings );
 			wp_enqueue_script( self::BOARD_ASSET_HANDLE );
@@ -154,80 +113,6 @@ class Assets_Service {
 		}
 
 		return $board_settings;
-	}
-
-	/**
-	 * Register Elementor integration hooks.
-	 */
-	public function bootstrap_elementor(): void {
-		if ( $this->elementor_bootstrapped ) {
-			return;
-		}
-
-		if ( ! class_exists( '\Elementor\Plugin' ) || ! class_exists( '\Elementor\Widget_Base' ) ) {
-			return;
-		}
-
-		$this->elementor_bootstrapped = true;
-
-		add_action( 'elementor/widgets/register', array( $this, 'register_elementor_widget' ) );
-		add_action( 'elementor/widgets/widgets_registered', array( $this, 'register_elementor_widget' ) );
-		add_action( 'elementor/elements/categories_registered', array( $this, 'register_elementor_category' ) );
-	}
-
-	/**
-	 * Register the GroomFlow widget with Elementor.
-	 *
-	 * @param \Elementor\Widgets_Manager $widgets_manager Elementor widgets manager.
-	 */
-	public function register_elementor_widget( $widgets_manager = null ): void {
-		require_once BBGF_PLUGIN_DIR . 'includes/elementor/class-board-widget.php';
-
-		if ( null === $widgets_manager ) {
-			$widgets_manager = ElementorPlugin::instance()->widgets_manager;
-		}
-
-		if ( ! $widgets_manager || ! class_exists( Board_Widget::class ) ) {
-			return;
-		}
-
-		if ( method_exists( $widgets_manager, 'is_widget_registered' ) && $widgets_manager->is_widget_registered( 'bbgf_board' ) ) {
-			return;
-		}
-
-		if ( method_exists( $widgets_manager, 'get_widget_types' ) ) {
-			$types = $widgets_manager->get_widget_types();
-			if ( isset( $types['bbgf_board'] ) ) {
-				return;
-			}
-		}
-
-		if ( method_exists( $widgets_manager, 'register' ) ) {
-			$widgets_manager->register( new Board_Widget() );
-		} elseif ( method_exists( $widgets_manager, 'register_widget_type' ) ) {
-			$widgets_manager->register_widget_type( new Board_Widget() );
-		}
-	}
-
-	/**
-	 * Add the GroomFlow category for Elementor widgets.
-	 *
-	 * @param \Elementor\Elements_Manager $elements_manager Elementor elements manager.
-	 */
-	public function register_elementor_category( $elements_manager = null ): void {
-		if ( null === $elements_manager ) {
-			$elements_manager = ElementorPlugin::instance()->elements_manager;
-		}
-
-		if ( method_exists( $elements_manager, 'add_category' ) ) {
-			$elements_manager->add_category(
-				'bbgf',
-				array(
-					'title' => __( 'GroomFlow', 'bb-groomflow' ),
-					'icon'  => 'eicon-favorite',
-				)
-			);
-		}
 	}
 
 	/**
@@ -432,9 +317,10 @@ class Assets_Service {
 			'namespace' => 'bb-groomflow/v1',
 			'nonce'     => is_user_logged_in() ? wp_create_nonce( 'wp_rest' ) : '',
 			'endpoints' => array(
-				'board'    => esc_url_raw( rest_url( 'bb-groomflow/v1/board' ) ),
-				'visits'   => esc_url_raw( rest_url( 'bb-groomflow/v1/visits' ) ),
-				'services' => esc_url_raw( rest_url( 'bb-groomflow/v1/services' ) ),
+				'board'        => esc_url_raw( rest_url( 'bb-groomflow/v1/board' ) ),
+				'visits'       => esc_url_raw( rest_url( 'bb-groomflow/v1/visits' ) ),
+				'intakeSearch' => esc_url_raw( rest_url( 'bb-groomflow/v1/visits/intake-search' ) ),
+				'services'     => esc_url_raw( rest_url( 'bb-groomflow/v1/services' ) ),
 			),
 		);
 
@@ -458,44 +344,59 @@ class Assets_Service {
 		);
 
 		$settings['strings'] = array(
-			'loading'           => __( 'Loading GroomFlow board…', 'bb-groomflow' ),
-			'emptyColumn'       => __( 'No visits in this stage yet', 'bb-groomflow' ),
-			'noVisits'          => __( 'No visits available.', 'bb-groomflow' ),
-			'refresh'           => __( 'Refresh', 'bb-groomflow' ),
-			'lastUpdated'       => __( 'Last updated', 'bb-groomflow' ),
-			'viewSwitcher'      => __( 'Board views', 'bb-groomflow' ),
-			'services'          => __( 'Services', 'bb-groomflow' ),
-			'flags'             => __( 'Behavior flags', 'bb-groomflow' ),
-			'notes'             => __( 'Notes', 'bb-groomflow' ),
-			'checkIn'           => __( 'Check-in', 'bb-groomflow' ),
-			'movePrev'          => __( 'Back', 'bb-groomflow' ),
-			'moveNext'          => __( 'Next', 'bb-groomflow' ),
-			'unknownClient'     => __( 'Client', 'bb-groomflow' ),
-			'stageControls'     => __( 'Stage controls', 'bb-groomflow' ),
-			'loadingError'      => __( 'Unable to load the board. Please refresh.', 'bb-groomflow' ),
-			'modalTitle'        => __( 'Visit details', 'bb-groomflow' ),
-			'modalLoading'      => __( 'Loading visit…', 'bb-groomflow' ),
-			'modalClose'        => __( 'Close', 'bb-groomflow' ),
-			'modalReadOnly'     => __( 'Read-only view', 'bb-groomflow' ),
-			'modalSummary'      => __( 'Summary', 'bb-groomflow' ),
-			'modalNotes'        => __( 'Notes', 'bb-groomflow' ),
-			'modalServices'     => __( 'Services', 'bb-groomflow' ),
-			'modalHistory'      => __( 'History', 'bb-groomflow' ),
-			'modalPhotos'       => __( 'Photos', 'bb-groomflow' ),
-			'modalSave'         => __( 'Save changes', 'bb-groomflow' ),
-			'modalSaving'       => __( 'Saving…', 'bb-groomflow' ),
-			'modalNoHistory'    => __( 'No history recorded yet.', 'bb-groomflow' ),
-			'modalNoPhotos'     => __( 'No photos uploaded for this visit.', 'bb-groomflow' ),
-			'searchPlaceholder' => __( 'Search clients, guardians, services…', 'bb-groomflow' ),
-			'filterServices'    => __( 'Services', 'bb-groomflow' ),
-			'filterFlags'       => __( 'Flags', 'bb-groomflow' ),
-			'filterAll'         => __( 'All', 'bb-groomflow' ),
-			'errorFetching'     => __( 'Unable to refresh the board. Please try again.', 'bb-groomflow' ),
-			'moveSuccess'       => __( 'Visit moved.', 'bb-groomflow' ),
-			'fullscreen'        => __( 'Fullscreen', 'bb-groomflow' ),
-			'exitFullscreen'    => __( 'Exit fullscreen', 'bb-groomflow' ),
-			'autoRefresh'       => __( 'Auto-refresh in', 'bb-groomflow' ),
-			'maskedGuardian'    => __( 'Guardian hidden for lobby view', 'bb-groomflow' ),
+			'loading'                => __( 'Loading GroomFlow board…', 'bb-groomflow' ),
+			'emptyColumn'            => __( 'No visits in this stage yet', 'bb-groomflow' ),
+			'noVisits'               => __( 'No visits available.', 'bb-groomflow' ),
+			'refresh'                => __( 'Refresh', 'bb-groomflow' ),
+			'lastUpdated'            => __( 'Last updated', 'bb-groomflow' ),
+			'viewSwitcher'           => __( 'Board views', 'bb-groomflow' ),
+			'services'               => __( 'Services', 'bb-groomflow' ),
+			'flags'                  => __( 'Behavior flags', 'bb-groomflow' ),
+			'notes'                  => __( 'Notes', 'bb-groomflow' ),
+			'checkIn'                => __( 'Check-in', 'bb-groomflow' ),
+			'movePrev'               => __( 'Back', 'bb-groomflow' ),
+			'moveNext'               => __( 'Next', 'bb-groomflow' ),
+			'unknownClient'          => __( 'Client', 'bb-groomflow' ),
+			'stageControls'          => __( 'Stage controls', 'bb-groomflow' ),
+			'loadingError'           => __( 'Unable to load the board. Please refresh.', 'bb-groomflow' ),
+			'modalTitle'             => __( 'Visit details', 'bb-groomflow' ),
+			'modalLoading'           => __( 'Loading visit…', 'bb-groomflow' ),
+			'modalClose'             => __( 'Close', 'bb-groomflow' ),
+			'modalReadOnly'          => __( 'Read-only view', 'bb-groomflow' ),
+			'modalSummary'           => __( 'Summary', 'bb-groomflow' ),
+			'modalNotes'             => __( 'Notes', 'bb-groomflow' ),
+			'modalServices'          => __( 'Services', 'bb-groomflow' ),
+			'modalVisit'             => __( 'Visit', 'bb-groomflow' ),
+			'modalHistory'           => __( 'History', 'bb-groomflow' ),
+			'modalPhotos'            => __( 'Photos', 'bb-groomflow' ),
+			'modalNoPrevious'        => __( 'No previous visits found.', 'bb-groomflow' ),
+			'modalUploadPhoto'       => __( 'Upload photo', 'bb-groomflow' ),
+			'modalVisibleToGuardian' => __( 'Visible to guardian', 'bb-groomflow' ),
+			'modalViewPhoto'         => __( 'View full size', 'bb-groomflow' ),
+			'modalSave'              => __( 'Save changes', 'bb-groomflow' ),
+			'modalSaving'            => __( 'Saving…', 'bb-groomflow' ),
+			'modalNoHistory'         => __( 'No history recorded yet.', 'bb-groomflow' ),
+			'modalNoPhotos'          => __( 'No photos uploaded for this visit.', 'bb-groomflow' ),
+			'searchPlaceholder'      => __( 'Search clients, guardians, services…', 'bb-groomflow' ),
+			'filterServices'         => __( 'Services', 'bb-groomflow' ),
+			'filterFlags'            => __( 'Flags', 'bb-groomflow' ),
+			'filterAll'              => __( 'All', 'bb-groomflow' ),
+			'errorFetching'          => __( 'Unable to refresh the board. Please try again.', 'bb-groomflow' ),
+			'moveSuccess'            => __( 'Visit moved.', 'bb-groomflow' ),
+			'fullscreen'             => __( 'Fullscreen', 'bb-groomflow' ),
+			'exitFullscreen'         => __( 'Exit fullscreen', 'bb-groomflow' ),
+			'autoRefresh'            => __( 'Auto-refresh in', 'bb-groomflow' ),
+			'maskedGuardian'         => __( 'Guardian hidden for lobby view', 'bb-groomflow' ),
+			'intakeTitle'            => __( 'Check in a client', 'bb-groomflow' ),
+			'intakeSearchLabel'      => __( 'Search clients or guardians', 'bb-groomflow' ),
+			'intakeNoResults'        => __( 'No matches found. Add a new client below.', 'bb-groomflow' ),
+			'intakeGuardian'         => __( 'Guardian', 'bb-groomflow' ),
+			'intakeClient'           => __( 'Client', 'bb-groomflow' ),
+			'intakeVisit'            => __( 'Visit details', 'bb-groomflow' ),
+			'intakeSubmit'           => __( 'Create visit', 'bb-groomflow' ),
+			'intakeSaving'           => __( 'Creating visit…', 'bb-groomflow' ),
+			'intakeSuccess'          => __( 'Visit created and added to the board.', 'bb-groomflow' ),
+			'intakeSearchHint'       => __( 'Search by client, guardian, phone, or email.', 'bb-groomflow' ),
 		);
 
 		/**
@@ -697,7 +598,7 @@ class Assets_Service {
 	}
 
 	/**
-	 * Build board markup shared by the shortcode, admin preview, and Elementor widget.
+	 * Build board markup shared by the shortcode and admin preview.
 	 *
 	 * @param array<string,mixed> $args      Additional display arguments.
 	 * @param array<string,mixed> $settings  Optional precomputed board settings.
@@ -1068,7 +969,7 @@ class Assets_Service {
 	}
 
 	/**
-	 * Placeholder data used to render the sprint-zero Kanban preview.
+	 * Placeholder data used to render the Kanban preview.
 	 *
 	 * @param string $active_view Active placeholder view key.
 	 * @return array<string, mixed>
@@ -1374,7 +1275,7 @@ class Assets_Service {
 		);
 
 		/**
-		 * Filters the placeholder board data used by the shortcode/Elementor preview.
+		 * Filters the placeholder board data used by the shortcode/admin preview.
 		 *
 		 * @param array<string,mixed> $data        Placeholder dataset.
 		 * @param string              $active_view Requested view key.

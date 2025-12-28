@@ -77,7 +77,6 @@ final class Plugin {
 		'bbgf_view_reports',
 		'bbgf_manage_settings',
 	);
-
 	/**
 	 * Role to capability assignments.
 	 *
@@ -105,75 +104,64 @@ final class Plugin {
 			'bbgf_view_board',
 		),
 	);
-
 	/**
 	 * Option key for storing database version.
 	 */
 	private const OPTION_DB_VERSION = 'bbgf_db_version';
-
 	/**
 	 * Cached table map.
 	 *
 	 * @var array<string,string>
 	 */
 	private array $table_names = array();
-
 	/**
 	 * Cached plugin settings.
 	 *
 	 * @var array<string,mixed>
 	 */
 	private array $settings = array();
-
 	/**
 	 * Flags admin handler.
 	 *
 	 * @var Flags_Admin
 	 */
 	private Flags_Admin $flags_admin;
-
 	/**
 	 * Clients admin handler.
 	 *
 	 * @var Clients_Admin
 	 */
 	private Clients_Admin $clients_admin;
-
 	/**
 	 * Guardians admin handler.
 	 *
 	 * @var Guardians_Admin
 	 */
 	private Guardians_Admin $guardians_admin;
-
 	/**
 	 * Services admin handler.
 	 *
 	 * @var Services_Admin
 	 */
 	private Services_Admin $services_admin;
-
 	/**
 	 * Packages admin handler.
 	 *
 	 * @var Packages_Admin
 	 */
 	private Packages_Admin $packages_admin;
-
 	/**
 	 * Stages admin handler.
 	 *
 	 * @var Stages_Admin
 	 */
 	private Stages_Admin $stages_admin;
-
 	/**
 	 * Views admin handler.
 	 *
 	 * @var Views_Admin
 	 */
 	private Views_Admin $views_admin;
-
 	/**
 	 * Settings admin handler.
 	 *
@@ -192,7 +180,6 @@ final class Plugin {
 	 * @var Notification_Triggers_Admin
 	 */
 	private Notification_Triggers_Admin $notification_triggers_admin;
-
 	/**
 	 * Notification logs admin handler.
 	 *
@@ -217,35 +204,30 @@ final class Plugin {
 	 * @var Assets_Service
 	 */
 	private Assets_Service $assets_service;
-
 	/**
 	 * Admin menu service.
 	 *
 	 * @var Admin_Menu_Service
 	 */
 	private Admin_Menu_Service $admin_menu_service;
-
 	/**
 	 * REST bootstrap service.
 	 *
 	 * @var Rest_Service
 	 */
 	private Rest_Service $rest_service;
-
 	/**
 	 * CLI service instance (only when WP-CLI is available).
 	 *
 	 * @var Cli_Service|null
 	 */
 	private ?Cli_Service $cli_service = null;
-
 	/**
 	 * Holds the singleton instance.
 	 *
 	 * @var Plugin|null
 	 */
 	private static ?Plugin $instance = null;
-
 	/**
 	 * Plugin constructor.
 	 */
@@ -292,7 +274,6 @@ final class Plugin {
 			$this->cli_service->register();
 		}
 	}
-
 	/**
 	 * Returns the singleton instance.
 	 *
@@ -305,7 +286,6 @@ final class Plugin {
 
 		return self::$instance;
 	}
-
 	/**
 	 * Activation hook callback.
 	 */
@@ -315,7 +295,6 @@ final class Plugin {
 		$instance->install_database();
 		flush_rewrite_rules();
 	}
-
 	/**
 	 * Deactivation hook callback.
 	 */
@@ -323,14 +302,12 @@ final class Plugin {
 		self::instance()->remove_roles_and_capabilities();
 		flush_rewrite_rules();
 	}
-
 	/**
 	 * Load plugin translations.
 	 */
 	public function load_textdomain(): void {
 		load_plugin_textdomain( 'bb-groomflow', false, dirname( plugin_basename( BBGF_PLUGIN_FILE ) ) . '/languages/' );
 	}
-
 	/**
 	 * Ensure plugin roles and capabilities exist.
 	 */
@@ -366,7 +343,6 @@ final class Plugin {
 			}
 		}
 	}
-
 	/**
 	 * Retrieve a localized label for plugin-defined roles.
 	 *
@@ -390,7 +366,6 @@ final class Plugin {
 				return translate_user_role( $readable );
 		}
 	}
-
 	/**
 	 * Remove custom roles and capabilities on deactivation.
 	 */
@@ -406,7 +381,6 @@ final class Plugin {
 			}
 		}
 	}
-
 	/**
 	 * Install or upgrade the database schema when needed.
 	 */
@@ -420,7 +394,6 @@ final class Plugin {
 
 		$this->install_database();
 	}
-
 	/**
 	 * Run incremental migrations before dbDelta.
 	 *
@@ -454,7 +427,6 @@ final class Plugin {
 		// Reset cached table names so subsequent calls use the latest schema mapping.
 		$this->table_names = array();
 	}
-
 	/**
 	 * Ensure plugin tables exist and seed default data.
 	 */
@@ -486,7 +458,6 @@ final class Plugin {
 		$this->seed_default_stages( $wpdb, $tables );
 		$this->seed_default_view( $wpdb, $tables );
 	}
-
 	/**
 	 * Determine if a table exists.
 	 *
@@ -498,7 +469,6 @@ final class Plugin {
 		$like = $wpdb->esc_like( $table );
 		return (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 	}
-
 	/**
 	 * Determine if a column exists on a table.
 	 *
@@ -515,7 +485,6 @@ final class Plugin {
 
 		return (bool) $wpdb->get_var( $wpdb->prepare( $query, $column ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 	}
-
 	/**
 	 * Determine if an index exists on a table.
 	 *
@@ -532,7 +501,6 @@ final class Plugin {
 
 		return (bool) $wpdb->get_var( $wpdb->prepare( $query, $index ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 	}
-
 	/**
 	 * Insert starter behaviour flags.
 	 *
@@ -594,7 +562,6 @@ final class Plugin {
 			);
 		}
 	}
-
 	/**
 	 * Insert starter services and packages.
 	 *
@@ -712,7 +679,6 @@ final class Plugin {
 			}
 		}
 	}
-
 	/**
 	 * Insert canonical stage definitions if missing.
 	 *
@@ -799,7 +765,6 @@ final class Plugin {
 			); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
 	}
-
 	/**
 	 * Create the default day view and stages.
 	 *
@@ -894,7 +859,6 @@ final class Plugin {
 			);
 		}
 	}
-
 	/**
 	 * Helper to get the current timestamp.
 	 *
@@ -903,7 +867,6 @@ final class Plugin {
 	public function now(): string {
 		return current_time( 'mysql' );
 	}
-
 	/**
 	 * Accessor for the notifications service.
 	 *
@@ -964,35 +927,6 @@ final class Plugin {
 		return $slug;
 	}
 
-
-
-
-
-
-
-
-
-	/**
-	 * Register Elementor integration hooks.
-	 */
-	public function bootstrap_elementor(): void {
-		$this->assets_service->bootstrap_elementor();
-	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	/**
 	 * Access the global wpdb instance.
 	 *
@@ -1052,13 +986,8 @@ final class Plugin {
 				'accent_color'  => '#0ea5e9',
 				'font_family'   => 'Inter, sans-serif',
 			),
-			'elementor'     => array(
-				'card_style'         => 'calm',
-				'stage_label_format' => 'name_timer',
-			),
 		);
 	}
-
 	/**
 	 * Return merged plugin settings with defaults.
 	 *
@@ -1092,9 +1021,6 @@ final class Plugin {
 		$branding = isset( $stored['branding'] ) && is_array( $stored['branding'] ) ? $stored['branding'] : array();
 		$branding = wp_parse_args( $branding, $defaults['branding'] );
 
-		$elementor = isset( $stored['elementor'] ) && is_array( $stored['elementor'] ) ? $stored['elementor'] : array();
-		$elementor = wp_parse_args( $elementor, $defaults['elementor'] );
-
 		$show_client_photo = ! empty( $lobby['show_client_photo'] );
 
 		$settings = array(
@@ -1126,10 +1052,6 @@ final class Plugin {
 				'accent_color'  => $this->sanitize_color_value( $branding['accent_color'] ),
 				'font_family'   => sanitize_text_field( $branding['font_family'] ),
 			),
-			'elementor'     => array(
-				'card_style'         => sanitize_key( $elementor['card_style'] ),
-				'stage_label_format' => sanitize_key( $elementor['stage_label_format'] ),
-			),
 		);
 
 		if ( $settings['board']['timer_thresholds']['yellow'] < $settings['board']['timer_thresholds']['green'] ) {
@@ -1144,15 +1066,12 @@ final class Plugin {
 
 		return $this->settings;
 	}
-
 	/**
 	 * Clear cached settings so the next fetch reads from the database.
 	 */
 	public function refresh_settings_cache(): void {
 		$this->settings = array();
 	}
-
-
 
 
 
@@ -1170,7 +1089,6 @@ final class Plugin {
 		$color = sanitize_hex_color( $value );
 		return $color ? $color : '';
 	}
-
 	/**
 	 * Helper to build admin URLs for plugin pages.
 	 *
@@ -1189,10 +1107,8 @@ final class Plugin {
 
 
 
-
-
 	/**
-	 * Build placeholder board markup shared by the shortcode, admin preview, and Elementor widget.
+	 * Build placeholder board markup shared by the shortcode and admin preview.
 	 *
 	 * @param array<string,mixed> $args Additional display arguments.
 	 * @return string

@@ -8,13 +8,13 @@
 - Scaffold stage-triggered notifications with `bbgf_visit_stage_changed` and `bbgf_notification_stage_queued` hooks tied into visit moves.
 - Persist notification deliveries to `wp_bb_notification_logs` with status metadata (stage, recipients, send outcome), add Notification Activity filters (search/date range/stage/status/template), and surface CSV export + resend controls.
 - Sprint 0 enhancements: register roles/capabilities, build the admin menu shell, and render the interactive placeholder Kanban board/shortcode.
-- Add Vite-driven asset pipeline (`npm run build`) plus Elementor widget skeleton wired to the preview board.
+- Add Vite-driven asset pipeline (`npm run build`) wired to the preview board.
 - Introduce `bb-groomflow/v1` namespace with `/health` endpoint and document the delivery flow (README + workflow updates).
 - Establish database schema scaffolding with `BBGF_DB_VERSION`, install/upgrade helpers, and seed starter data for services, flags, and the default view.
 - Add WordPress admin UI for behavior flags with CRUD actions, nonce protection, and WP_List_Table rendering.
-- Modularize plugin bootstrap by moving board assets, admin shell, REST routing, and WP-CLI registration into dedicated services with stable wrappers for Elementor + placeholder markup.
-- Teach the board assets service to load translation files, expose `bbgf_board_script_settings`/`bbgf_placeholder_board_data` filters, and refresh the placeholder markup with ARIA labels/timer narration so shortcode, admin, and Elementor previews stay accessible.
-- Replace the placeholder board shell with a live renderer that uses the localized REST payload for shortcode, admin, and Elementor surfaces (capacity hints, timers, and cards match the database before JavaScript hydration).
+- Modularize plugin bootstrap by moving board assets, admin shell, REST routing, and WP-CLI registration into dedicated services with stable wrappers for placeholder markup.
+- Teach the board assets service to load translation files, expose `bbgf_board_script_settings`/`bbgf_placeholder_board_data` filters, and refresh the placeholder markup with ARIA labels/timer narration so shortcode and admin previews stay accessible.
+- Replace the placeholder board shell with a live renderer that uses the localized REST payload for shortcode and admin surfaces (capacity hints, timers, and cards match the database before JavaScript hydration).
 - Harden coding standards across bootstrap/CLI/data/notification services (dbDelta-based upgrade for notification triggers, wp_rand-based demo data, documented visibility helpers) so `qa-phpcs plugin/bb-groomflow` runs clean without blanket ignores.
 - Harden `wp bbgf visits` CLI + demo seed data (prepared statements, per-view logging, UTC-friendly timestamps) and teach `Visit_Service::create_visit()` to honor supplied timer metadata so seeded visits immediately reflect elapsed time and status.
 - Ship Clients & Guardians admin dashboards with create/update/delete flows, guardian linkage, and sortable lists.
@@ -24,6 +24,6 @@
 - Bootstrap WordPress plugin scaffold with activation hooks, shortcode placeholder, and admin shell.
 - Add manual build tooling (`scripts/build_plugin_zip.sh`) and PHPCS ruleset.
 - Provision Docker WordPress stack, production-sync loader script, and workflow documentation for stateless agents.
-- Expand product specification, roadmap, sprint plans, and architecture docs to support feature planning.
+- Expand product specification and architecture docs to support feature planning.
 - Documented the stateless slice ritual across README/SPEC/TECH_READINESS/QA_TOOLBELT (build ZIP → Docker install → qa-phpcs + manual admin) and published a WP-CLI happy-path template for headless QA evidence.
 - Document change-management process (AGENTS.md + `docs/CHANGE_MANAGEMENT.md`) so agents can collaborate on pivots safely.
