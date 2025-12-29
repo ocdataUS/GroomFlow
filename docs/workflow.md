@@ -2,6 +2,10 @@
 
 Reference for moving from shell login to a tested ZIP running in Docker WordPress. The fast path lives in `AGENTS.md`; use this file when you need details or troubleshooting.
 
+## Scope
+- **Lives here:** Docker/ZIP install loop, build commands, push/SSH troubleshooting.
+- **Not here:** Product requirements, REST/UX details, architecture (see `AGENTS.md` map).
+
 ## Quick Start
 ```bash
 git status

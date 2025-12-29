@@ -1,5 +1,9 @@
 # UX Guide — GroomFlow
 
+## Scope
+- **Lives here:** Interaction and visual rules for boards, modals, and controls.
+- **Not here:** Product requirements, REST/data contracts, deployment/QA steps (see `AGENTS.md` map).
+
 ## Tone & Feel
 - Calm, Apple-inspired interface: neutral backgrounds, subtle shadows, rounded corners, tasteful accent colors.
 - Motion should feel purposeful and gentle (ease-out 120–180 ms). Respect `prefers-reduced-motion`.

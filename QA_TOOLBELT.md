@@ -2,6 +2,10 @@
 
 This machine has a shared **QA toolbelt** installed for any stateless agent.
 
+## Scope
+- **Lives here:** Installed QA utilities, commands, artifact paths, and how to run them.
+- **Not here:** Product behaviour, architecture, or onboarding (see `AGENTS.md` map).
+
 ## What’s installed (machine‑wide)
 
 - **Chromium (headless)** with **CDP** (DevTools) on demand

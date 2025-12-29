@@ -1,5 +1,9 @@
 # DB Schema — GroomFlow
 
+## Scope
+- **Lives here:** Table definitions, key columns, timestamp conventions, schema constraints.
+- **Not here:** REST payloads, UI behaviour, deployment steps (see `AGENTS.md` map).
+
 All tables use the WordPress table prefix. Manage schema via `dbDelta` (see `plugin/bb-groomflow/includes/database/class-schema.php`) and bump `BBGF_DB_VERSION` on change. Provide upgrade routines that migrate existing installs (never destructive).
 
 | Table | Purpose | Key Columns |

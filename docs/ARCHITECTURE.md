@@ -1,5 +1,9 @@
 # Architecture — GroomFlow Plugin
 
+## Scope
+- **Lives here:** Component boundaries, directory layout, data/control flows, extensibility points.
+- **Not here:** Product requirements, QA/release steps, Docker/install instructions (see `AGENTS.md` map).
+
 ## Overview
 
 GroomFlow is a standalone WordPress plugin that operates entirely within its own namespace (`BBGF`). All business entities live in custom database tables; WordPress core is leveraged for users, roles/capabilities, media, and settings. The front-end Kanban is powered by vanilla JavaScript modules bundled once and enqueued via standard WP asset APIs.

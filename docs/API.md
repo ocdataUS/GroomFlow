@@ -1,5 +1,9 @@
 # API Reference — `bb-groomflow/v1`
 
+## Scope
+- **Lives here:** REST routes, payload shapes, auth/capability expectations, public vs internal notes.
+- **Not here:** Frontend patterns, data schema design, QA or deployment steps (see `AGENTS.md` map).
+
 All endpoints require HTTPS, WordPress nonce authentication (for logged-in users), and capability checks. Public lobby endpoints accept a token (read-only, masked data).
 
 ## Board & Visits
@@ -12,6 +16,7 @@ All endpoints require HTTPS, WordPress nonce authentication (for logged-in users
 | `PATCH` | `/visits/{id}` | Update visit details (notes, assigned staff, services, flags, guardian contact). |
 | `POST` | `/visits/{id}/move` | Move visit to new stage. Body: `to_stage`, optional `comment`, `notify` flag. Response returns `{ visit, history_entry }` so the UI can update both the card and timeline immediately. |
 | `POST` | `/visits/{id}/photo` | Upload photo; accepts multipart form with `file` or existing media ID. Returns attachment metadata and updated visit photo list. |
+| `POST` | `/visits/{id}/checkout` | Mark visit as completed/checked out with optional comment; removes it from active board payloads. |
 
 ## Directory Data
 

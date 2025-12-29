@@ -1,5 +1,9 @@
 # HOTFIX_PROTOCOL — GroomFlow v0 Beta
 
+## Scope
+- **Lives here:** Allowed/disallowed hotfix criteria and the exact execution steps.
+- **Not here:** Feature delivery process, onboarding, or architecture details (see `AGENTS.md` map).
+
 Purpose: hotfixes cover bug fixes, UX/layout adjustments, copy changes, and behaviour tweaks from real usage or direct feedback—handled one item at a time.
 
 Allowed changes:

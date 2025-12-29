@@ -1,6 +1,10 @@
 # Bubbles & Bows GroomFlow
 
-WordPress plugin + docs for the GroomFlow operations platform. Start with `AGENTS.md` for onboarding; use this file for the system snapshot and map.
+WordPress plugin + docs for the GroomFlow operations platform. Start with `AGENTS.md` and its Documentation Map; this file is a snapshot of the system and code layout only.
+
+## Scope
+- **Lives here:** High-level system snapshot, code location map, build touchpoints.
+- **Not here:** Onboarding steps, task routing, QA flow (see `AGENTS.md` + map).
 
 ## System Overview
 - **Data layer:** Custom tables for clients, guardians, services, packages, flags, visits, visit services/flags, stage history, views, notifications, notification triggers.
@@ -22,14 +26,4 @@ WordPress plugin + docs for the GroomFlow operations platform. Start with `AGENT
 - Notifications: `plugin/bb-groomflow/includes/notifications/`
 - QA scripts: `scripts/qa_smoke.sh`, `QA_TOOLBELT.md`
 
-## Onboarding (fast path)
-```bash
-bash scripts/build_plugin_zip.sh
-cd docker && docker compose up -d
-docker compose cp ../build/bb-groomflow-0.1.0-dev.zip wordpress:/var/www/html/bb-groomflow.zip
-docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow.zip --force --activate
-docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8 --force
-qa-phpcs plugin/bb-groomflow    # then run the admin happy-path
-```
-
-Use breadcrumbs for handoffs and keep PHPCS clean before every delivery. For details or troubleshooting, follow `AGENTS.md`, `docs/README.md`, and `docs/workflow.md`.
+For onboarding, QA, and troubleshooting, follow `AGENTS.md` and the Documentation Map; this file is reference-only.

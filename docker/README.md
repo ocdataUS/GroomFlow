@@ -2,6 +2,10 @@
 
 This compose stack provisions WordPress + MySQL + WP-CLI for local plugin QA. It keeps data in Docker volumes so database state persists between runs.
 
+## Scope
+- **Lives here:** Compose usage, env vars, and WP-CLI entry for the local stack.
+- **Not here:** Product/feature guidance, build/QA orchestration (see `AGENTS.md` map and `docs/workflow.md`).
+
 ## Usage
 
 ```bash

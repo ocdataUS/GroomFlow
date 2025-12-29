@@ -4,7 +4,7 @@ This is the single starting point for beta work. Follow this path exactly; every
 ---
 
 ## Fast Onboarding (linear path)
-1. **Read:** This file, then `SPEC.md` for product intent. Use the doc map below for anything else you need.
+1. **Read:** This file and the Documentation Map below; open only the docs that match your task.
 2. **Prep repo:** `git status`; copy `docker/.env.example` → `docker/.env` if missing.
 3. **Start Docker:** `cd docker && docker compose up -d`.
 4. **Build ZIP:** From repo root run `bash scripts/build_plugin_zip.sh` (run `npm run build` first if bundles are stale).
@@ -20,11 +20,18 @@ This is the single starting point for beta work. Follow this path exactly; every
 7. **Breadcrumb:** Create/update `docs/breadcrumbs/<date>-<topic>.md` with actions, QA results, and artifact paths. Keep a running log in `qa/QA_LOG.md` when applicable.
 8. **Plan + Asana:** Set a brief plan using the planning tool; if working an Asana task, lock it per `docs/ASANA_TOOLBOX.md` (comment `LOCKED…`, set GF Status to In progress, move to Doing).
 
-## Doc Map (read order + reference)
-- **Must read now:** `README.md` (system overview + code map), `SPEC.md` (scope/requirements), `QA_TOOLBELT.md` (QA commands), `docs/workflow.md` (Docker + install loop), `docs/HOTFIX_PROTOCOL.md` (post-beta fixes).
-- **Reference when needed:** `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/DB_SCHEMA.md`, `docs/SECURITY.md`, `docs/UX_GUIDE.md`, `docker/README.md`, `scripts/qa_smoke.sh`.
-- **Breadcrumbs:** `docs/breadcrumbs/` (read newest before coding; use `docs/BREADCRUMBS_TEMPLATE.md` when adding one).
-- **Out of scope for onboarding:** Historical sprints/roadmaps and old refactor plans have been removed.
+## Documentation Map (How to Find What You Need)
+- Product intent & visit flows → `SPEC.md` — requirements, terminology, guardrails.
+- Architecture & directories → `docs/ARCHITECTURE.md` — component boundaries and where code lives.
+- REST endpoints & controllers → `docs/API.md` — routes, payloads, capabilities, public vs internal.
+- Data schema & invariants → `docs/DB_SCHEMA.md` — tables, keys, timestamps, constraints.
+- Frontend assets & build → `README.md` — system snapshot, code map, asset build locations.
+- Docker install/build loop → `docs/workflow.md`, `docker/README.md` — ZIP build, compose usage, install steps.
+- QA & release → `QA_TOOLBELT.md`, `scripts/qa_smoke.sh` — tooling, commands, artifact expectations.
+- Hotfix policy → `docs/HOTFIX_PROTOCOL.md` — allowed/disallowed hotfix scope and steps.
+- UX patterns → `docs/UX_GUIDE.md` — interaction/visual rules for board, modals, controls.
+- Security & access → `docs/SECURITY.md` — capability/nonce rules, public token handling.
+- Continuity & history → `AGENT_HANDOFF.md`, `docs/breadcrumbs/` — handoffs and historical notes (reference-only).
 
 ## Working Mode — Beta Stabilization
 - v0 is feature-complete; prioritize regressions and hotfixes over net-new work.
@@ -36,6 +43,13 @@ This is the single starting point for beta work. Follow this path exactly; every
 ## QA & Handoff
 - Required before handoff: packaged ZIP installed in Docker, demo data seeded, `qa-phpcs plugin/bb-groomflow` clean (document any intentional ignores), admin happy-path confirmed, artifacts stored under `/opt/qa/artifacts` and referenced in the breadcrumb.
 - Keep commits conventional; never commit build ZIPs. Push via SSH as needed (setup in `docs/workflow.md`).
+
+## Documentation Governance — Document as You Discover
+- Update the doc that owns a domain whenever you uncover non-obvious logic, behavioural quirks, or resolved contradictions.
+- Documentation updates are part of task completion; do not defer them.
+- Route details into existing docs rather than creating new ones when coverage exists.
+- Keep updates concise and scoped to the domain doc; avoid duplicating content across files.
+- Use breadcrumbs for slice history; do not treat them as canonical instructions.
 
 ## Long-Running Task Continuity
 - Use `AGENT_HANDOFF.md` to record decisions, current state, blockers, and next actions for any task likely to exceed one session.

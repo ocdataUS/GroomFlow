@@ -1,5 +1,9 @@
 # SPEC — Bubbles & Bows GroomFlow (Standalone WordPress Plugin)
 
+## Scope
+- **Lives here:** Product intent, terminology, behavioural requirements, non-functional guardrails.
+- **Not here:** Implementation steps, build/QA process, doc routing (see `AGENTS.md` + Documentation Map).
+
 **Vision:** Deliver a calm, Apple‑like grooming operations suite that replaces corkboards and spreadsheets. GroomFlow centers the **animal client** and guides the team through every stage of the visit with a responsive, accessible Kanban UI, rich customer records, and flexible customization for non-technical staff.
 
 > **Terminology:** All UI copy, documentation, and new code must refer to the animal being groomed as the “Client.” Dogs remain our primary example data, but the platform needs to feel species-agnostic (cats, bunnies, miniature ponies, etc.). Back-end identifiers, REST routes, and database schema should migrate toward `client` naming in upcoming work.
