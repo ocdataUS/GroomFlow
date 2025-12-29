@@ -13,6 +13,7 @@ const strings = {
 	flags: settings.strings?.flags ?? 'Behavior flags',
 	notes: settings.strings?.notes ?? 'Notes',
 	checkIn: settings.strings?.checkIn ?? 'Check-in',
+	addVisit: settings.strings?.addVisit ?? 'Add visit',
 	movePrev: settings.strings?.movePrev ?? 'Back',
 	moveNext: settings.strings?.moveNext ?? 'Next',
 	unknownClient: settings.strings?.unknownClient ?? 'Client',
@@ -55,9 +56,9 @@ const strings = {
 	guardianLabel: settings.strings?.guardianLabel ?? 'Guardian',
 	stageLabel: settings.strings?.stageLabel ?? 'Stage',
 	stagesLabel: settings.strings?.stagesLabel ?? 'Stages',
-	intakeTitle: settings.strings?.intakeTitle ?? 'Check in a client',
+	intakeTitle: settings.strings?.intakeTitle ?? 'Add visit',
 	intakeSearchLabel: settings.strings?.intakeSearchLabel ?? 'Search clients or guardians',
-	intakeNoResults: settings.strings?.intakeNoResults ?? 'No matches found. Add a new client below.',
+	intakeNoResults: settings.strings?.intakeNoResults ?? 'No matches found in this tab. Try Guardian/Client or add details below.',
 	intakeGuardian: settings.strings?.intakeGuardian ?? 'Guardian',
 	intakeClient: settings.strings?.intakeClient ?? 'Client',
 	intakeVisit: settings.strings?.intakeVisit ?? 'Visit details',
@@ -65,6 +66,8 @@ const strings = {
 	intakeSaving: settings.strings?.intakeSaving ?? 'Creating visit…',
 	intakeSuccess: settings.strings?.intakeSuccess ?? 'Visit created and added to the board.',
 	intakeSearchHint: settings.strings?.intakeSearchHint ?? 'Search by client, guardian, phone, or email.',
+	intakeSelect: settings.strings?.intakeSelect ?? 'Select',
+	modalCheckoutConfirm: settings.strings?.modalCheckoutConfirm ?? 'Are you sure you want to check out this visit?',
 };
 
 const presentation = settings.presentation || {};
@@ -161,6 +164,55 @@ const cloneStage = (stage) => {
 	};
 };
 
+const parseTimestamp = (value) => {
+	const ts = Date.parse(value);
+	return Number.isNaN(ts) ? null : ts;
+};
+
+const getVisitSortTimestamp = (visit) => {
+	const checkIn = parseTimestamp(visit?.check_in_at);
+	if (checkIn !== null) {
+		return checkIn;
+	}
+
+	const created = parseTimestamp(visit?.created_at);
+	if (created !== null) {
+		return created;
+	}
+
+	const updated = parseTimestamp(visit?.updated_at);
+	return updated !== null ? updated : Number.MAX_SAFE_INTEGER;
+};
+
+const sortVisitsFifo = (visits) =>
+	ensureArray(visits)
+		.slice()
+		.sort((a, b) => {
+			const timeDiff = getVisitSortTimestamp(a) - getVisitSortTimestamp(b);
+			if (timeDiff !== 0) {
+				return timeDiff;
+			}
+
+			const idDiff = (Number(a?.id) || 0) - (Number(b?.id) || 0);
+			return idDiff;
+		});
+
+const sortBoardStages = (board) => {
+	if (!board || typeof board !== 'object') {
+		return board;
+	}
+
+	const sortedStages = ensureArray(board.stages).map((stage) => ({
+		...stage,
+		visits: sortVisitsFifo(stage?.visits),
+	}));
+
+	return {
+		...board,
+		stages: sortedStages,
+	};
+};
+
 const buildStageMap = (stages) => {
 	const map = new Map();
 
@@ -178,22 +230,22 @@ const buildStageMap = (stages) => {
 
 const applyBoardPatch = (currentBoard, patchBoard) => {
 	if (!patchBoard || typeof patchBoard !== 'object') {
-		return currentBoard;
+		return sortBoardStages(currentBoard);
 	}
 
 	if (!currentBoard || typeof currentBoard !== 'object') {
-		return patchBoard;
+		return sortBoardStages(patchBoard);
 	}
 
 	const currentStageMap = buildStageMap(currentBoard.stages);
 	const patchStageMap = buildStageMap(patchBoard.stages);
 
 	if (!patchStageMap.size) {
-		return {
+		return sortBoardStages({
 			...currentBoard,
 			...patchBoard,
 			stages: ensureArray(currentBoard.stages).map((stage) => cloneStage(stage)),
-		};
+		});
 	}
 
 	const changedVisitIds = new Set();
@@ -248,11 +300,11 @@ const applyBoardPatch = (currentBoard, patchBoard) => {
 		return aOrder - bOrder;
 	});
 
-	return {
+	return sortBoardStages({
 		...currentBoard,
 		...patchBoard,
 		stages: mergedStages,
-	};
+	});
 };
 
 const findVisitById = (board, visitId) => {
@@ -1221,6 +1273,14 @@ const createCardElement = (visit, stage, options) => {
 	name.textContent = safeString(visit.client?.name ?? copy.unknownClient);
 	info.appendChild(name);
 
+	const breed = safeString(visit.client?.breed ?? '');
+	if (breed) {
+		const breedLine = document.createElement('p');
+		breedLine.className = 'bbgf-card-breed';
+		breedLine.textContent = breed;
+		info.appendChild(breedLine);
+	}
+
 	const flags = ensureArray(visit.flags);
 	if (flags.length && showFlagsSetting) {
 		const flagsWrapper = document.createElement('div');
@@ -1262,6 +1322,16 @@ const createCardElement = (visit, stage, options) => {
 	timer.textContent = formatDuration(timerSeconds);
 	timerRow.appendChild(timer);
 
+	const checkInText = formatCheckIn(visit.check_in_at);
+	if (checkInText) {
+		const checkInSpan = document.createElement('span');
+		checkInSpan.className = 'bbgf-card-checkin';
+		checkInSpan.textContent = checkInText;
+		timerRow.appendChild(checkInSpan);
+	}
+
+	body.appendChild(timerRow);
+
 	const services = ensureArray(visit.services);
 	if (services.length && showServicesSetting) {
 		const servicesWrapper = document.createElement('div');
@@ -1282,20 +1352,6 @@ const createCardElement = (visit, stage, options) => {
 
 		body.appendChild(servicesWrapper);
 	}
-
-	const footer = document.createElement('div');
-	footer.className = 'bbgf-card-footer';
-	footer.appendChild(timerRow);
-
-	const checkInText = formatCheckIn(visit.check_in_at);
-	if (checkInText) {
-		const checkInSpan = document.createElement('span');
-		checkInSpan.className = 'bbgf-card-checkin';
-		checkInSpan.textContent = checkInText;
-		footer.appendChild(checkInSpan);
-	}
-
-	body.appendChild(footer);
 
 	card.appendChild(body);
 
@@ -1483,8 +1539,8 @@ const renderBoard = (state, root, config, copy) => {
 			intakeButton.type = 'button';
 			intakeButton.className = 'bbgf-icon-button bbgf-intake-button';
 			intakeButton.dataset.role = 'bbgf-intake-open';
-			intakeButton.setAttribute('aria-label', strings.intakeTitle);
-			intakeButton.innerHTML = `<span aria-hidden="true">＋</span><span class="bbgf-intake-button__label">${escapeHtml(strings.checkIn)}</span>`;
+			intakeButton.setAttribute('aria-label', strings.addVisit || strings.intakeTitle);
+			intakeButton.innerHTML = `<span aria-hidden="true">＋</span><span class="screen-reader-text">${escapeHtml(strings.intakeTitle)}</span>`;
 			controls.appendChild(intakeButton);
 		}
 
@@ -1529,8 +1585,10 @@ const renderBoard = (state, root, config, copy) => {
 						<h2 id="bbgf-modal-title" class="bbgf-modal__title">${copy.modalTitle}</h2>
 						<span class="bbgf-modal__badge" data-role="bbgf-modal-readonly" hidden>${copy.modalReadOnly}</span>
 					</div>
-					<div class="bbgf-modal__nav" data-role="bbgf-modal-nav"></div>
-					<button type="button" class="bbgf-modal__close" data-role="bbgf-modal-close" aria-label="${copy.modalClose}">&times;</button>
+					<div class="bbgf-modal__header-actions">
+						<div class="bbgf-modal__nav" data-role="bbgf-modal-nav"></div>
+						<button type="button" class="bbgf-modal__close" data-role="bbgf-modal-close" aria-label="${copy.modalClose}">&times;</button>
+					</div>
 				</header>
 				<nav class="bbgf-modal__tabs" data-role="bbgf-modal-tabs"></nav>
 				<div class="bbgf-modal__body" data-role="bbgf-modal-body">
@@ -1556,7 +1614,11 @@ const renderBoard = (state, root, config, copy) => {
 					<div class="bbgf-modal__heading">
 						<h2 id="bbgf-intake-title" class="bbgf-modal__title">${escapeHtml(strings.intakeTitle)}</h2>
 					</div>
-					<button type="button" class="bbgf-modal__close" data-role="bbgf-intake-close" aria-label="${escapeHtml(strings.modalClose)}">&times;</button>
+					<div class="bbgf-intake-header-actions" data-role="bbgf-intake-header-actions">
+						<div class="bbgf-intake-selected--header" data-role="bbgf-intake-selected-slot"></div>
+						<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-intake-submit">${escapeHtml(strings.intakeSubmit)}</button>
+						<button type="button" class="bbgf-modal__close" data-role="bbgf-intake-close" aria-label="${escapeHtml(strings.modalClose)}">&times;</button>
+					</div>
 				</header>
 				<div class="bbgf-modal__body bbgf-intake-body" data-role="bbgf-intake-body">
 					<p class="bbgf-modal__loading">${escapeHtml(strings.loading)}</p>
@@ -1807,7 +1869,7 @@ const getDefaultIntakeState = (board) => ({
 });
 
 const initialState = {
-	board: settings.initialBoard || null,
+	board: sortBoardStages(settings.initialBoard || null),
 	isLoading: false,
 	errors: [],
 	lastFetchedAt: null,
@@ -2077,6 +2139,11 @@ const handleModalCheckout = async () => {
 	const { modal, board } = state;
 
 	if (!modal.visitId || modal.isSaving || modal.readOnly || board?.readonly) {
+		return;
+	}
+
+	const confirmed = window.confirm(strings.modalCheckoutConfirm || strings.modalCheckout);
+	if (!confirmed) {
 		return;
 	}
 
@@ -2398,9 +2465,10 @@ const loadBoard = async ({ reason = 'manual', forceFull = false, targetView } = 
 
 		store.setState((state) => {
 			const mergedBoard = useModifiedAfter && state.board ? applyBoardPatch(state.board, response) : response;
+			const sortedBoard = sortBoardStages(mergedBoard);
 
 			return {
-				board: mergedBoard,
+				board: sortedBoard,
 				isLoading: false,
 				errors: [],
 				lastFetchedAt: new Date().toISOString(),
@@ -2671,7 +2739,7 @@ const handleIntakeSubmit = async () => {
 	const guardianFirst = safeString(guardian.first_name || '');
 	const guardianLast = safeString(guardian.last_name || '');
 	const clientName = safeString(client.name || '');
-	const stageKey = safeString(visit.current_stage || resolveDefaultStageKey(board));
+	const stageKey = safeString(resolveDefaultStageKey(board));
 	const viewId = Number(visit.view_id || board?.view?.id || 0) || null;
 
 	if (!guardianFirst || !guardianLast) {
@@ -3204,17 +3272,21 @@ const renderModal = (state, root, copy) => {
 			const canMove = settings.capabilities?.moveStages && !state.board?.readonly && !modal.readOnly && !modal.visit.check_out_at;
 			const prevButton =
 				canMove && neighbors.prev
-					? `<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-modal-move" data-direction="prev">${escapeHtml(copy.movePrev)}</button>`
+					? `<button type="button" class="bbgf-icon-button" data-role="bbgf-modal-move" data-direction="prev" aria-label="${escapeHtml(copy.movePrev)}" title="${escapeHtml(
+							copy.movePrev
+						)}">←</button>`
 					: '';
 			const nextButton =
 				canMove && neighbors.next
-					? `<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-modal-move" data-direction="next">${escapeHtml(copy.moveNext)}</button>`
+					? `<button type="button" class="bbgf-icon-button" data-role="bbgf-modal-move" data-direction="next" aria-label="${escapeHtml(copy.moveNext)}" title="${escapeHtml(
+							copy.moveNext
+						)}">→</button>`
 					: '';
 			const checkoutButton =
 				canEdit && !modal.visit.check_out_at
-					? `<button type="button" class="bbgf-button bbgf-button--critical" data-role="bbgf-modal-checkout" ${modal.isSaving ? 'disabled' : ''}>${escapeHtml(
+					? `<button type="button" class="bbgf-icon-button bbgf-icon-button--critical" data-role="bbgf-modal-checkout" aria-label="${escapeHtml(copy.modalCheckout)}" title="${escapeHtml(
 							copy.modalCheckout
-						)}</button>`
+						)}" ${modal.isSaving ? 'disabled' : ''}>✓</button>`
 					: '';
 			const checkoutTime = modal.visit.check_out_at ? formatDateTime(modal.visit.check_out_at) : '';
 			const checkoutMeta =
@@ -3224,14 +3296,14 @@ const renderModal = (state, root, copy) => {
 						}</span>`
 					: '';
 			nav.innerHTML = `
+				<div class="bbgf-modal__nav-info">
+					<span>${escapeHtml(stageLabel || copy.stageLabel)}</span>
+					${checkoutMeta}
+				</div>
 				<div class="bbgf-modal__nav-actions">
 					${prevButton}
 					${nextButton}
 					${checkoutButton}
-				</div>
-				<div class="bbgf-modal__nav-info">
-					<span>${escapeHtml(stageLabel || copy.stageLabel)}</span>
-					${checkoutMeta}
 				</div>
 			`;
 		} else {
@@ -3640,14 +3712,9 @@ const renderIntakeModal = (state, root, copy) => {
 
 	const stages = ensureArray(board?.stages);
 	const viewLabel = safeString(board?.view?.name ?? board?.view?.slug ?? '');
-	const stageOptions = stages
-		.map((stage) => {
-			const key = safeString(stage.key ?? stage.stage_key ?? '');
-			const label = safeString(stage.label ?? key);
-			const selected = intake.visit.current_stage === key ? 'selected' : '';
-			return `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}</option>`;
-		})
-		.join('');
+	const startingStageKey = resolveDefaultStageKey(board);
+	const startingStageLabel =
+		stages.find((stage) => safeString(stage.key ?? stage.stage_key ?? '') === startingStageKey)?.label ?? startingStageKey;
 
 	const results = ensureArray(intake.searchResults);
 	const resultItems = results
@@ -3670,7 +3737,7 @@ const renderIntakeModal = (state, root, copy) => {
 						${contact ? `<p class="bbgf-intake-result__contact">${escapeHtml(contact)}</p>` : ''}
 					</div>
 					<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-intake-select" data-result-index="${index}">${escapeHtml(
-						copy.checkIn
+						copy.intakeSelect
 					)}</button>
 				</article>
 			`;
@@ -3789,12 +3856,7 @@ const renderIntakeModal = (state, root, copy) => {
 	const visitPanel = `
 		<section class="bbgf-intake-panel" role="tabpanel" aria-label="${escapeHtml(copy.intakeVisit)}">
 			<h3>${escapeHtml(copy.intakeVisit)}</h3>
-			<div class="bbgf-intake-field">
-				<label>${escapeHtml(copy.stageLabel)}</label>
-				<select data-role="bbgf-intake-field" data-section="visit" data-field="current_stage">
-					${stageOptions || `<option value="">${escapeHtml(copy.stageLabel)}</option>`}
-				</select>
-			</div>
+			${startingStageLabel ? `<p class="bbgf-modal__hint">${escapeHtml(`Starts in ${startingStageLabel}`)}</p>` : ''}
 			${viewLabel ? `<p class="bbgf-intake-view-hint">${escapeHtml(`Will appear on the ${viewLabel} board`)}</p>` : ''}
 			<div class="bbgf-intake-field">
 				<label>${escapeHtml('Instructions')}</label>
@@ -3818,21 +3880,32 @@ const renderIntakeModal = (state, root, copy) => {
 		<div class="bbgf-modal__tabs bbgf-intake-tabs" role="tablist">
 			${tabsHtml}
 		</div>
-		${selectedBadge ? `<div class="bbgf-intake-selected-wrap">${selectedBadge}</div>` : ''}
 		<div class="bbgf-intake-panel-wrap" id="bbgf-intake-panel-${escapeHtml(activeTab)}">
 			${panels[activeTab] ?? ''}
 		</div>
 	`;
 
-	actions.innerHTML = `
-		${intake.error ? `<div class="bbgf-modal__error">${escapeHtml(intake.error)}</div>` : ''}
-		<div class="bbgf-modal__actions">
-			<button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-intake-close" ${intake.isSaving ? 'disabled' : ''}>${escapeHtml(copy.modalClose)}</button>
-			<button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-intake-submit" ${intake.isSaving ? 'disabled' : ''}>${escapeHtml(
-		intake.isSaving ? copy.intakeSaving : copy.intakeSubmit
-	)}</button>
-		</div>
-	`;
+	actions.innerHTML = `${intake.error ? `<div class="bbgf-modal__error">${escapeHtml(intake.error)}</div>` : ''}`;
+
+	const selectedSlot = container.querySelector('[data-role="bbgf-intake-selected-slot"]');
+	if (selectedSlot) {
+		if (selectedBadge) {
+			selectedSlot.innerHTML = selectedBadge;
+			selectedSlot.removeAttribute('hidden');
+		} else {
+			selectedSlot.innerHTML = '';
+			selectedSlot.setAttribute('hidden', 'hidden');
+		}
+	}
+
+	const headerActions = container.querySelector('[data-role="bbgf-intake-header-actions"]');
+	if (headerActions) {
+		const submitButton = headerActions.querySelector('[data-role="bbgf-intake-submit"]');
+		if (submitButton) {
+			submitButton.textContent = intake.isSaving ? copy.intakeSaving : copy.intakeSubmit;
+			submitButton.disabled = Boolean(intake.isSaving);
+		}
+	}
 
 	const restoreIntakeFocus = () => {
 		if (focusMeta?.role) {

@@ -250,6 +250,31 @@ class Visits_Controller extends REST_Controller {
 	public function get_board_permissions_check( $request ) {
 		$public_token = $request->get_param( 'public_token' );
 		if ( null !== $public_token && '' !== $public_token ) {
+			$view_param = $request->get_param( 'view' );
+			$view       = null;
+
+			if ( is_string( $view_param ) && '' !== $view_param ) {
+				$view = $this->visit_service->get_view_by_slug( $view_param );
+			} else {
+				$view = $this->visit_service->get_default_view();
+			}
+
+			if ( null === $view ) {
+				return new WP_Error(
+					'bbgf_view_not_found',
+					__( 'Requested view could not be found.', 'bb-groomflow' ),
+					array( 'status' => 404 )
+				);
+			}
+
+			if ( ! $this->visit_service->verify_public_token( $view, (string) $public_token ) ) {
+				return new WP_Error(
+					'bbgf_view_invalid_token',
+					__( 'This view requires a valid public token.', 'bb-groomflow' ),
+					array( 'status' => 401 )
+				);
+			}
+
 			return true;
 		}
 
@@ -547,7 +572,10 @@ class Visits_Controller extends REST_Controller {
 			return $validated;
 		}
 
-		$result = $this->visit_service->update_visit( $visit_id, $validated['visit'], $validated['services'], $validated['flags'], $current_row );
+		$user    = wp_get_current_user();
+		$user_id = $user ? (int) $user->ID : 0;
+
+		$result = $this->visit_service->update_visit( $visit_id, $validated['visit'], $validated['services'], $validated['flags'], $current_row, $user_id );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}

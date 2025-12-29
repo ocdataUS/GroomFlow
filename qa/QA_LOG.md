@@ -2,6 +2,11 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2025-12-29 | codex | Board/visit UX polish | Playwright smoke: board centering, intake “Add visit”, modal nav icons/checkout, small viewport | `/opt/qa/artifacts/board-centered-1767046121733.png`, `/opt/qa/artifacts/intake-add-visit-1767046121733.png`, `/opt/qa/artifacts/visit-modal-nav-1767046121733.png`, `/opt/qa/artifacts/visit-modal-history-1767046121733.png`, `/opt/qa/artifacts/board-after-checkout-1767046121733.png`, `/opt/qa/artifacts/board-small-1767046121733.png` | PASS |
+| 2025-12-29 | codex | Security & ordering | curl board (unauth + invalid token); board FIFO order dump | `/opt/qa/artifacts/board-public-deny-20251229T221623Z.txt`, `/opt/qa/artifacts/board-invalid-token-20251229T221723Z.txt`, `/opt/qa/artifacts/board-order-verify-20251229T221518Z.txt` | PASS |
+| 2025-12-29 | codex | Visit attribution | `wp eval GET /bb-groomflow/v1/visits/2082` after update + checkout | `/opt/qa/artifacts/visit-2082-response-20251229T220941Z.json` | PASS |
+| 2025-12-29 | codex | Seeder refresh | `wp bbgf visits seed-demo --count=6 --force` then rerun without `--force` + listings | `/opt/qa/artifacts/visits-before-refresh-20251229T215236Z.json`, `/opt/qa/artifacts/visits-after-refresh-20251229T215415Z.json` | PASS |
+| 2025-12-29 | codex | Board/visit UX polish | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1767045455.txt` | PASS |
 | 2025-12-28 | codex | Visit lifecycle hardening | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/phpcs-1766959360.txt` | PASS |
 | 2025-12-28 | codex | Visit lifecycle hardening | Manual visit lifecycle + modals walkthrough | `/opt/qa/artifacts/manual-visit-lifecycle-20251228T220301Z.txt` | PASS |
 | 2025-12-28 | codex | Visit lifecycle hardening | `wp eval rest_do_request(POST /bb-groomflow/v1/visits/2059/checkout)` | `/opt/qa/artifacts/rest-checkout-20251228T220436Z.txt` | PASS |

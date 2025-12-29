@@ -354,6 +354,7 @@ class Assets_Service {
 			'flags'                  => __( 'Behavior flags', 'bb-groomflow' ),
 			'notes'                  => __( 'Notes', 'bb-groomflow' ),
 			'checkIn'                => __( 'Check-in', 'bb-groomflow' ),
+			'addVisit'               => __( 'Add visit', 'bb-groomflow' ),
 			'movePrev'               => __( 'Back', 'bb-groomflow' ),
 			'moveNext'               => __( 'Next', 'bb-groomflow' ),
 			'unknownClient'          => __( 'Client', 'bb-groomflow' ),
@@ -379,6 +380,7 @@ class Assets_Service {
 			'modalCheckedOut'        => __( 'Checked out', 'bb-groomflow' ),
 			'modalCheckoutAt'        => __( 'Checked out at', 'bb-groomflow' ),
 			'modalPreparingUpload'   => __( 'Preparing photos…', 'bb-groomflow' ),
+			'modalCheckoutConfirm'   => __( 'Are you sure you want to check out this visit?', 'bb-groomflow' ),
 			'modalNoHistory'         => __( 'No history recorded yet.', 'bb-groomflow' ),
 			'modalNoPhotos'          => __( 'No photos uploaded for this visit.', 'bb-groomflow' ),
 			'searchPlaceholder'      => __( 'Search clients, guardians, services…', 'bb-groomflow' ),
@@ -391,9 +393,9 @@ class Assets_Service {
 			'exitFullscreen'         => __( 'Exit fullscreen', 'bb-groomflow' ),
 			'autoRefresh'            => __( 'Auto-refresh in', 'bb-groomflow' ),
 			'maskedGuardian'         => __( 'Guardian hidden for lobby view', 'bb-groomflow' ),
-			'intakeTitle'            => __( 'Check in a client', 'bb-groomflow' ),
+			'intakeTitle'            => __( 'Add visit', 'bb-groomflow' ),
 			'intakeSearchLabel'      => __( 'Search clients or guardians', 'bb-groomflow' ),
-			'intakeNoResults'        => __( 'No matches found. Add a new client below.', 'bb-groomflow' ),
+			'intakeNoResults'        => __( 'No matches found in this tab. Try Guardian/Client or add details below.', 'bb-groomflow' ),
 			'intakeGuardian'         => __( 'Guardian', 'bb-groomflow' ),
 			'intakeClient'           => __( 'Client', 'bb-groomflow' ),
 			'intakeVisit'            => __( 'Visit details', 'bb-groomflow' ),
@@ -401,6 +403,7 @@ class Assets_Service {
 			'intakeSaving'           => __( 'Creating visit…', 'bb-groomflow' ),
 			'intakeSuccess'          => __( 'Visit created and added to the board.', 'bb-groomflow' ),
 			'intakeSearchHint'       => __( 'Search by client, guardian, phone, or email.', 'bb-groomflow' ),
+			'intakeSelect'           => __( 'Select', 'bb-groomflow' ),
 		);
 
 		/**

@@ -167,9 +167,10 @@ class Visits_Command extends Base_Command {
 			WP_CLI::error( __( 'Visit table is not registered. Run database migrations first.', 'bb-groomflow' ) );
 		}
 
-		$force = (bool) get_flag_value( $assoc_args, 'force', false );
-		$count = (int) get_flag_value( $assoc_args, 'count', 6 );
-		$count = max( 1, min( 12, $count ) );
+		$force     = (bool) get_flag_value( $assoc_args, 'force', false );
+		$count     = (int) get_flag_value( $assoc_args, 'count', 6 );
+		$count     = max( 1, min( 12, $count ) );
+		$refreshed = 0;
 
 		if ( $force ) {
 			$deleted_rows = $this->truncate_visit_tables( $tables );
@@ -180,17 +181,27 @@ class Visits_Command extends Base_Command {
 					$deleted_rows
 				)
 			);
-		} else {
-			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
-			$count_query = $this->wpdb->prepare(
-				"SELECT COUNT(*) FROM {$tables['visits']} WHERE 1 = %d",
-				1
+		}
+
+		$existing_visits_by_view = $force ? array() : $this->get_existing_visits_by_view( $tables );
+		if ( ! $force && ! empty( $existing_visits_by_view ) ) {
+			$existing_total = array_sum(
+				array_map(
+					static function ( $items ) {
+						return count( $items );
+					},
+					$existing_visits_by_view
+				)
 			);
-			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
-			$existing = (int) $this->wpdb->get_var( $count_query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
-			if ( $existing > 0 ) {
-				WP_CLI::warning( __( 'Visits already exist. Re-run with --force to replace them.', 'bb-groomflow' ) );
-				return;
+
+			if ( $existing_total > 0 ) {
+				WP_CLI::log(
+					sprintf(
+						/* translators: %d: number of existing visits */
+						__( 'Found %d existing visit(s); refreshing timers and topping up without duplicates.', 'bb-groomflow' ),
+						$existing_total
+					)
+				);
 			}
 		}
 
@@ -242,7 +253,19 @@ class Visits_Command extends Base_Command {
 				continue;
 			}
 
-			for ( $index = 0; $index < $count; $index++ ) {
+			$offsets           = $this->build_time_offsets( $count );
+			$existing_for_view = $existing_visits_by_view[ (int) $view['id'] ] ?? array();
+			$refresh_total     = min( count( $existing_for_view ), $count );
+
+			for ( $index = 0; $index < $refresh_total; $index++ ) {
+				$visit_row   = $existing_for_view[ $index ];
+				$stage_key   = sanitize_key( (string) ( $visit_row['current_stage'] ?? '' ) );
+				$stage_key   = ( '' !== $stage_key && in_array( $stage_key, $stage_keys, true ) ) ? $stage_key : $stage_keys[0];
+				$minutes_ago = $offsets[ $index ] ?? wp_rand( 6, 28 );
+				$refreshed  += $this->refresh_visit_timer( $visit_row, $stage_key, $minutes_ago, $now_utc, $now_mysql, $tables ) ? 1 : 0;
+			}
+
+			for ( $index = $refresh_total; $index < $count; $index++ ) {
 				$profile     = $profiles[ $index % count( $profiles ) ];
 				$stage_key   = $stage_keys[ $index % count( $stage_keys ) ];
 				$guardian_id = $this->get_or_create_guardian( $profile['guardian'], $tables, $now_mysql );
@@ -262,7 +285,7 @@ class Visits_Command extends Base_Command {
 					}
 				}
 
-				$minutes_ago  = ( $index * 12 ) + wp_rand( 6, 28 );
+				$minutes_ago  = $offsets[ $index ] ?? ( ( $index * 12 ) + wp_rand( 6, 28 ) );
 				$check_in_ts  = $now_utc - ( $minutes_ago * MINUTE_IN_SECONDS );
 				$check_in_at  = gmdate( 'Y-m-d H:i:s', $check_in_ts );
 				$elapsed_secs = max( 180, (int) ( $now_utc - $check_in_ts ) );
@@ -317,9 +340,10 @@ class Visits_Command extends Base_Command {
 
 		WP_CLI::success(
 			sprintf(
-				/* translators: 1: number of visits 2: number of views */
-				__( 'Seeded %1$d demo visits across %2$d view(s).', 'bb-groomflow' ),
+				/* translators: 1: number of new visits 2: refreshed visits 3: number of views */
+				__( 'Seeded %1$d new visit(s) and refreshed %2$d existing across %3$d view(s).', 'bb-groomflow' ),
 				$created,
+				$refreshed,
 				count( $views )
 			)
 		);
@@ -359,6 +383,111 @@ class Visits_Command extends Base_Command {
 		}
 
 		return $total;
+	}
+
+	/**
+	 * Fetch existing visits grouped by view ID.
+	 *
+	 * @param array<string,string> $tables Table map.
+	 * @return array<int,array<int,array<string,mixed>>>
+	 */
+	private function get_existing_visits_by_view( array $tables ): array {
+		if ( empty( $tables['visits'] ) ) {
+			return array();
+		}
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Table name provided by schema map.
+		$sql = $this->wpdb->prepare(
+			"SELECT id, view_id, current_stage FROM {$tables['visits']} WHERE 1 = %d ORDER BY view_id ASC, id ASC",
+			1
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared above.
+
+		if ( empty( $rows ) ) {
+			return array();
+		}
+
+		$grouped = array();
+		foreach ( $rows as $row ) {
+			$view_id = isset( $row['view_id'] ) ? (int) $row['view_id'] : 0;
+			if ( $view_id <= 0 ) {
+				continue;
+			}
+
+			if ( ! isset( $grouped[ $view_id ] ) ) {
+				$grouped[ $view_id ] = array();
+			}
+
+			$grouped[ $view_id ][] = $row;
+		}
+
+		return $grouped;
+	}
+
+	/**
+	 * Build staggered time offsets for demo visits.
+	 *
+	 * @param int $count Visit count.
+	 * @return array<int,int>
+	 */
+	private function build_time_offsets( int $count ): array {
+		$offsets = array();
+
+		for ( $index = 0; $index < $count; $index++ ) {
+			$offsets[ $index ] = ( $index * 12 ) + wp_rand( 6, 28 );
+		}
+
+		return $offsets;
+	}
+
+	/**
+	 * Refresh an existing visit timer without creating a duplicate.
+	 *
+	 * @param array<string,mixed>  $visit_row Existing visit row.
+	 * @param string               $stage_key Stage key to keep.
+	 * @param int                  $minutes_ago Minutes ago the visit was checked in.
+	 * @param int                  $now_utc Current time (UTC timestamp).
+	 * @param string               $now_mysql Current time (MySQL datetime).
+	 * @param array<string,string> $tables Table map.
+	 * @return bool True on success.
+	 */
+	private function refresh_visit_timer( array $visit_row, string $stage_key, int $minutes_ago, int $now_utc, string $now_mysql, array $tables ): bool {
+		$visit_id = isset( $visit_row['id'] ) ? (int) $visit_row['id'] : 0;
+		if ( $visit_id <= 0 ) {
+			return false;
+		}
+
+		$check_in_ts  = $now_utc - ( $minutes_ago * MINUTE_IN_SECONDS );
+		$check_in_at  = gmdate( 'Y-m-d H:i:s', $check_in_ts );
+		$elapsed_secs = max( 180, (int) ( $now_utc - $check_in_ts ) );
+
+		$status = 'in_progress';
+		if ( in_array( $stage_key, array( 'ready', 'ready_pickup', 'ready_for_service' ), true ) ) {
+			$status = 'ready';
+		}
+
+		if ( ! empty( $tables['stage_history'] ) ) {
+			$this->wpdb->delete( $tables['stage_history'], array( 'visit_id' => $visit_id ), array( '%d' ) );
+		}
+
+		$result = $this->wpdb->update(
+			$tables['visits'],
+			array(
+				'current_stage'         => $stage_key,
+				'status'                => $status,
+				'check_in_at'           => $check_in_at,
+				'check_out_at'          => null,
+				'timer_elapsed_seconds' => $elapsed_secs,
+				'timer_started_at'      => $check_in_at,
+				'updated_at'            => $now_mysql,
+			),
+			array( 'id' => $visit_id ),
+			array( '%s', '%s', '%s', '%s', '%d', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $result;
 	}
 
 	/**

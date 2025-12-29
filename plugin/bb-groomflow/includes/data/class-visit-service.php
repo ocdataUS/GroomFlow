@@ -275,7 +275,7 @@ class Visit_Service {
 			$args_sql     = array_merge( $args_sql, $stage_filter_list );
 		}
 
-		$sql .= ' ORDER BY v.updated_at DESC';
+		$sql .= ' ORDER BY COALESCE(v.check_in_at, v.created_at, v.updated_at) ASC, v.id ASC';
 
 		$prepared_sql = $this->wpdb->prepare(
 			$sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names and dynamic placeholders are controlled internally; values prepared via wpdb.
@@ -713,9 +713,11 @@ class Visit_Service {
 	 * @param array<int>|null          $services Services to sync (null to keep existing).
 	 * @param array<int>|null          $flags    Flags to sync (null to keep existing).
 	 * @param array<string,mixed>|null $existing_row Existing visit row (optional) for cache invalidation.
+	 * @param int                      $user_id Acting user ID for attribution.
+	 * @param string                   $comment Optional comment for history.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function update_visit( int $visit_id, array $visit, ?array $services, ?array $flags, ?array $existing_row = null ) {
+	public function update_visit( int $visit_id, array $visit, ?array $services, ?array $flags, ?array $existing_row = null, int $user_id = 0, string $comment = '' ) {
 		$existing_row        = $existing_row ?? $this->get_visit_row( $visit_id );
 		$previous_view_id    = isset( $existing_row['view_id'] ) ? (int) $existing_row['view_id'] : null;
 		$visit['updated_at'] = $this->plugin->now();
@@ -777,6 +779,13 @@ class Visit_Service {
 			$this->flush_cache( $new_view_id );
 		} else {
 			$this->flush_cache();
+		}
+
+		if ( $user_id > 0 ) {
+			$history_comment = '' !== $comment ? sanitize_textarea_field( $comment ) : __( 'Visit updated', 'bb-groomflow' );
+			$from_stage      = sanitize_key( (string) ( $existing_row['current_stage'] ?? $visit['current_stage'] ?? 'active' ) );
+			$from_stage      = '' !== $from_stage ? $from_stage : 'active';
+			$this->log_stage_history( $visit_id, $from_stage, 'updated', $history_comment, $user_id, 0 );
 		}
 
 		return $payload;
