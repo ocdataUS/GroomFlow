@@ -3438,15 +3438,12 @@ const renderModal = (state, root, copy) => {
 						}</span>`
 					: '';
 			nav.innerHTML = `
-				<div class="bbgf-modal__nav-info">
-					<span>${escapeHtml(stageLabel || copy.stageLabel)}</span>
-					${checkoutMeta}
-				</div>
 				<div class="bbgf-modal__nav-actions">
 					${prevButton}
 					${nextButton}
 					${checkoutButton}
 				</div>
+				${checkoutMeta ? `<div class="bbgf-modal__nav-info">${checkoutMeta}</div>` : ''}
 			`;
 		} else {
 			nav.innerHTML = '';
@@ -3514,6 +3511,7 @@ const renderModal = (state, root, copy) => {
 			const checkOut = escapeHtml(formatDateTime(visit.check_out_at) || '');
 			const timerSeconds = toNumber(visit.timer_elapsed_seconds) ?? 0;
 			const elapsedDisplay = timerSeconds > 0 ? escapeHtml(formatDuration(timerSeconds)) : '';
+			const breed = escapeHtml(visit.client?.breed ?? '');
 			const instructions = escapeHtml(visit.instructions ?? '').replace(/\n/g, '<br>');
 			const publicNotes = escapeHtml(visit.public_notes ?? '').replace(/\n/g, '<br>');
 			const privateNotes = escapeHtml(visit.private_notes ?? '').replace(/\n/g, '<br>');
@@ -3548,6 +3546,7 @@ const renderModal = (state, root, copy) => {
 						<div class="bbgf-modal-summary__photo">${photoMarkup}</div>
 						<div class="bbgf-modal-summary__primary">
 							<h3 class="bbgf-modal-summary__name">${clientName}</h3>
+							${breed ? `<p class="bbgf-modal-summary__breed">${breed}</p>` : ''}
 							<p class="bbgf-modal-summary__subtitle">
 								<span class="bbgf-modal-summary__stage">${escapeHtml(stageLabel || visit.current_stage || '')}</span>
 								${elapsedDisplay ? `<span class="bbgf-modal-summary__elapsed">${elapsedDisplay}</span>` : ''}

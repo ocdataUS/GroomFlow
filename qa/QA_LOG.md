@@ -2,6 +2,7 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2025-02-09 | codex | Modal header hardening | Playwright: Visit modal with very long name/breed at 1280px and 640px; verified no overflow, compact header, breed under name | `/tmp/modal-header-long-desktop.png`, `/tmp/modal-header-long-small.png` | PASS |
 | 2025-02-09 | codex | Board responsive modes | Playwright snapshots: horizontal centering (1440px) and vertical collapsible (640px); verified FIFO order/drag unchanged | `/tmp/bbgf-board-horizontal.png`, `/tmp/bbgf-board-vertical.png` | PASS |
 | 2025-12-29 | codex | Board/visit UX polish | Playwright smoke: board centering, intake “Add visit”, modal nav icons/checkout, small viewport | `/opt/qa/artifacts/board-centered-1767046121733.png`, `/opt/qa/artifacts/intake-add-visit-1767046121733.png`, `/opt/qa/artifacts/visit-modal-nav-1767046121733.png`, `/opt/qa/artifacts/visit-modal-history-1767046121733.png`, `/opt/qa/artifacts/board-after-checkout-1767046121733.png`, `/opt/qa/artifacts/board-small-1767046121733.png` | PASS |
 | 2025-12-29 | codex | Security & ordering | curl board (unauth + invalid token); board FIFO order dump | `/opt/qa/artifacts/board-public-deny-20251229T221623Z.txt`, `/opt/qa/artifacts/board-invalid-token-20251229T221723Z.txt`, `/opt/qa/artifacts/board-order-verify-20251229T221518Z.txt` | PASS |

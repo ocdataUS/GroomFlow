@@ -1054,12 +1054,13 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 
 .bbgf-modal__header {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
 	gap: 0.85rem;
 	padding: 1.1rem 1.4rem 1.1rem;
 	border-bottom: 1px solid var(--bbgf-border);
 	position: relative;
+	flex-wrap: wrap;
 }
 
 .bbgf-modal__header > * {
@@ -1072,6 +1073,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	gap: 0.5rem;
 	flex-wrap: wrap;
 	min-width: 0;
+	flex: 1 1 40%;
 }
 
 .bbgf-modal__tabs {
@@ -1127,8 +1129,11 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 }
 
 .bbgf-modal__title {
-	font-size: 1.1rem;
+	font-size: clamp(0.98rem, 1vw + 0.8rem, 1.1rem);
 	margin: 0;
+	line-height: 1.2;
+	word-break: break-word;
+	max-width: 100%;
 }
 
 .bbgf-modal__close {
@@ -1190,6 +1195,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	justify-content: flex-end;
 	width: auto;
 	flex-wrap: wrap;
+	min-width: 0;
 }
 
 .bbgf-modal__nav-actions {
@@ -1207,6 +1213,9 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	color: var(--bbgf-muted);
 	align-items: flex-end;
 	text-align: right;
+	min-width: 0;
+	flex: 0 1 260px;
+	word-break: break-word;
 }
 
 .bbgf-modal__header-actions {
@@ -1215,6 +1224,9 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	justify-content: flex-end;
 	gap: 0.35rem;
 	margin-left: auto;
+	flex: 1 1 40%;
+	min-width: 0;
+	flex-wrap: wrap;
 }
 
 .bbgf-intake-header-actions {
@@ -1858,6 +1870,13 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 .bbgf-modal-summary__name {
 	font-size: 1.35rem;
 	margin: 0;
+}
+
+.bbgf-modal-summary__breed {
+	margin: 0;
+	color: var(--bbgf-muted);
+	font-size: 1rem;
+	font-weight: 600;
 }
 
 .bbgf-modal-summary__subtitle {
