@@ -45,4 +45,10 @@
 - Optional audio cues (toggle in settings) for “Ready” stage or overdue alerts; default to off.
 - Toasters appear bottom-right, auto-dismiss after 4 seconds, remain focusable for keyboard users.
 
+## Responsive Board
+- Horizontal (default): center columns, allow proportional shrink; avoid horizontal scroll unless columns exceed viewport.
+- Breakpoint: switch to vertical when the board cannot fit three ~260px columns plus gaps (~<830px effective width).
+- Vertical: columns stack as collapsible sections; headers stay visible with name + count; first non-empty column expands by default; users can collapse to scan quickly.
+- Behaviors are layout-driven (no device targeting) and share the same markup; drag/drop and card ordering remain unchanged.
+
 Keep this guide updated as new interactions or themes are introduced. Designers and engineers should reference this before implementing UI changes.

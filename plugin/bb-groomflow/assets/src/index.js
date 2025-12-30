@@ -213,6 +213,65 @@ const sortBoardStages = (board) => {
 	};
 };
 
+const getDefaultExpandedStage = (board) => {
+	const stages = ensureArray(board?.stages);
+	const firstWithVisits = stages.find((stage) => ensureArray(stage?.visits).length > 0);
+	if (firstWithVisits) {
+		return safeString(firstWithVisits.key ?? firstWithVisits.stage_key ?? '');
+	}
+	return safeString(stages[0]?.key ?? stages[0]?.stage_key ?? '');
+};
+
+const evaluateLayoutMode = (root) => {
+	if (!root) {
+		return 'horizontal';
+	}
+
+	const minColumnWidth = 260;
+	const columnGap = 24;
+	const requiredForThree = minColumnWidth * 3 + columnGap * 2;
+	const width = root.clientWidth || window.innerWidth || 0;
+
+	return width < requiredForThree ? 'vertical' : 'horizontal';
+};
+
+const syncLayoutMode = (root) => {
+	const state = store.getState();
+	const board = state.board;
+	const requestedMode = evaluateLayoutMode(root);
+	const stageKeys = ensureArray(board?.stages).map((stage) => safeString(stage?.key ?? stage?.stage_key ?? ''));
+	const wasVertical = state.layout?.mode === 'vertical';
+	let expandedStage = state.layout?.expandedStage ?? '';
+
+	if (requestedMode === 'vertical') {
+		if (expandedStage && !stageKeys.includes(expandedStage)) {
+			const fallback = getDefaultExpandedStage(board);
+			if (fallback) {
+				expandedStage = fallback;
+			}
+		} else if (!expandedStage && !wasVertical) {
+			const fallback = getDefaultExpandedStage(board);
+			if (fallback) {
+				expandedStage = fallback;
+			}
+		}
+	} else {
+		expandedStage = '';
+	}
+
+	if (requestedMode !== state.layout.mode || expandedStage !== state.layout.expandedStage) {
+		setLayoutState({
+			mode: requestedMode,
+			expandedStage,
+		});
+	}
+
+	return {
+		mode: requestedMode,
+		expandedStage,
+	};
+};
+
 const buildStageMap = (stages) => {
 	const map = new Map();
 
@@ -1359,20 +1418,39 @@ const createCardElement = (visit, stage, options) => {
 };
 
 const createColumnElement = (stage, options) => {
-	const { copy, previous, next, canMove, pendingMoves, readonly, draggingVisitId, searchActive, presentation = {} } = options;
+	const {
+		copy,
+		previous,
+		next,
+		canMove,
+		pendingMoves,
+		readonly,
+		draggingVisitId,
+		searchActive,
+		presentation = {},
+		layoutMode = 'horizontal',
+		expandedStage,
+	} = options;
 
 	const stageKey = safeString(stage.key ?? stage.stage_key ?? '');
 	const label = safeString(stage.label ?? stageKey);
 	const visits = ensureArray(stage.visits);
 	const count = visits.length;
+	const isVertical = layoutMode === 'vertical';
+	const isExpanded = !isVertical || (expandedStage && expandedStage === stageKey);
 
 	const column = document.createElement('section');
 	column.className = 'bbgf-column';
 	column.dataset.stage = stageKey;
 	column.dataset.visitCount = String(count);
+	column.dataset.expanded = isExpanded ? 'true' : 'false';
 	column.setAttribute('role', 'listitem');
 	column.setAttribute('aria-label', label);
 	column.setAttribute('aria-dropeffect', readonly ? 'none' : 'move');
+
+	if (isVertical && !isExpanded) {
+		column.classList.add('bbgf-column--collapsed');
+	}
 
 	const header = document.createElement('header');
 	header.className = 'bbgf-column-header';
@@ -1391,7 +1469,14 @@ const createColumnElement = (stage, options) => {
 	countSpan.setAttribute('aria-label', String(count));
 	title.appendChild(countSpan);
 
-	header.appendChild(title);
+	const toggle = document.createElement('button');
+	toggle.type = 'button';
+	toggle.className = 'bbgf-column-toggle';
+	toggle.dataset.role = 'bbgf-column-toggle';
+	toggle.dataset.stage = stageKey;
+	toggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+	toggle.appendChild(title);
+	header.appendChild(toggle);
 
 	column.appendChild(header);
 
@@ -1399,6 +1484,11 @@ const createColumnElement = (stage, options) => {
 	body.className = 'bbgf-column-body';
 	body.setAttribute('role', 'list');
 	body.setAttribute('aria-label', `${label} column cards`);
+	if (isVertical && !isExpanded) {
+		body.setAttribute('hidden', 'hidden');
+	} else {
+		body.removeAttribute('hidden');
+	}
 
 	if (!visits.length) {
 		const empty = document.createElement('p');
@@ -1440,6 +1530,10 @@ const buildActionDock = (state, board, copy, ui) => {
 const renderBoard = (state, root, config, copy) => {
 	root.classList.add('bbgf-board--bootstrapped');
 
+	const layoutState = syncLayoutMode(root);
+	const layoutMode = layoutState?.mode || state.layout?.mode || 'horizontal';
+	const expandedStage = layoutState?.expandedStage || state.layout?.expandedStage || '';
+
 	const board = state.board;
 	if (!board) {
 		root.innerHTML = '';
@@ -1462,6 +1556,8 @@ const renderBoard = (state, root, config, copy) => {
 	const viewType = safeString(board.view?.type ?? '');
 	root.dataset.viewType = viewType;
 	root.dataset.boardMode = ui.mode;
+	root.dataset.layoutMode = layoutMode;
+	root.dataset.expandedStage = expandedStage || '';
 
 	if (board.readonly) {
 		root.classList.add('bbgf-board--readonly');
@@ -1481,6 +1577,8 @@ const renderBoard = (state, root, config, copy) => {
 	const columnsWrapper = document.createElement('div');
 	columnsWrapper.className = 'bbgf-board';
 	columnsWrapper.setAttribute('role', 'list');
+	columnsWrapper.dataset.layoutMode = layoutMode;
+	columnsWrapper.dataset.expandedStage = expandedStage || '';
 
 	const filtersActive = false;
 	const baseStages = ensureArray(board.stages);
@@ -1521,6 +1619,8 @@ const renderBoard = (state, root, config, copy) => {
 				draggingVisitId,
 				searchActive: filtersActive,
 				presentation: ui,
+				layoutMode,
+				expandedStage,
 			});
 			columnsWrapper.appendChild(column);
 		});
@@ -1886,6 +1986,10 @@ const initialState = {
 		visitId: null,
 		fromStage: '',
 	},
+	layout: {
+		mode: 'horizontal',
+		expandedStage: '',
+	},
 	modal: {
 		isOpen: false,
 		visitId: null,
@@ -1984,6 +2088,16 @@ const setIntakeState = (updater) => {
 		return {
 			...state,
 			intake,
+		};
+	});
+};
+
+const setLayoutState = (updater) => {
+	store.setState((state) => {
+		const layout = typeof updater === 'function' ? updater(state.layout, state) : { ...state.layout, ...updater };
+		return {
+			...state,
+			layout,
 		};
 	});
 };
@@ -2395,6 +2509,7 @@ let lastErrorsRef = null;
 let photoPreparationToken = 0;
 let activeTouchDrag = null;
 let intakeSearchTimer = null;
+let layoutResizeTimer = null;
 
 const updateFullscreenButton = () => {
 	if (!fullscreenButton) {
@@ -2420,6 +2535,18 @@ const toggleFullscreen = () => {
 	}
 
 	updateFullscreenButton();
+};
+
+const handleLayoutResize = () => {
+	if (layoutResizeTimer) {
+		window.clearTimeout(layoutResizeTimer);
+	}
+
+	layoutResizeTimer = window.setTimeout(() => {
+		if (boardRootElement) {
+			syncLayoutMode(boardRootElement);
+		}
+	}, 120);
 };
 
 const clearPollTimer = () => {
@@ -2585,6 +2712,21 @@ const handleQuickMove = async (button) => {
 };
 
 const handleBoardClick = (event) => {
+	const columnToggle = event.target.closest('[data-role="bbgf-column-toggle"]');
+	if (columnToggle) {
+		const stageKey = safeString(columnToggle.dataset.stage);
+		const state = store.getState();
+		const layoutMode = state.layout?.mode || 'horizontal';
+		const stageKeys = ensureArray(state.board?.stages).map((stage) => safeString(stage?.key ?? stage?.stage_key ?? ''));
+		if (layoutMode === 'vertical' && stageKey && stageKeys.includes(stageKey)) {
+			setLayoutState((current) => ({
+				...current,
+				expandedStage: current.expandedStage === stageKey ? '' : stageKey,
+			}));
+		}
+		return;
+	}
+
 	if (currentPresentation.mode === 'display') {
 		return;
 	}
@@ -4096,6 +4238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	boardRootElement = root;
 	applyAppearanceTheme(boardRootElement);
 	document.addEventListener('fullscreenchange', updateFullscreenButton);
+	syncLayoutMode(root);
 
 	if (settings.context?.view) {
 		root.dataset.activeView = settings.context.view;
@@ -4119,6 +4262,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		viewOverride: initialStateSnapshot.viewOverride,
 		nextRefreshAt: initialStateSnapshot.nextRefreshAt,
 		lastFetchedAt: initialStateSnapshot.lastFetchedAt,
+		layout: initialStateSnapshot.layout,
 	};
 	lastModalSnapshot = {
 		isOpen: initialStateSnapshot.modal.isOpen,
@@ -4144,7 +4288,8 @@ document.addEventListener('DOMContentLoaded', () => {
 			state.filters !== lastBoardStateRef.filters ||
 			state.viewOverride !== lastBoardStateRef.viewOverride ||
 			state.nextRefreshAt !== lastBoardStateRef.nextRefreshAt ||
-			state.lastFetchedAt !== lastBoardStateRef.lastFetchedAt;
+			state.lastFetchedAt !== lastBoardStateRef.lastFetchedAt ||
+			state.layout !== lastBoardStateRef.layout;
 
 		const errorsChanged = state.errors !== lastErrorsRef;
 		if (boardChanged) {
@@ -4163,6 +4308,7 @@ document.addEventListener('DOMContentLoaded', () => {
 				viewOverride: state.viewOverride,
 				nextRefreshAt: state.nextRefreshAt,
 				lastFetchedAt: state.lastFetchedAt,
+				layout: state.layout,
 			};
 		} else if (errorsChanged) {
 			renderErrors(state, root, strings);
@@ -4223,6 +4369,8 @@ document.addEventListener('DOMContentLoaded', () => {
 	root.addEventListener('touchstart', handleTouchStart, { passive: true });
 	root.addEventListener('touchmove', handleTouchMove, { passive: false });
 	root.addEventListener('touchend', handleTouchEnd, { passive: true });
+	window.addEventListener('resize', handleLayoutResize, { passive: true });
+	window.addEventListener('orientationchange', handleLayoutResize, { passive: true });
 
 	loadBoard({ reason: 'initial', forceFull: !settings.initialBoard });
 });
