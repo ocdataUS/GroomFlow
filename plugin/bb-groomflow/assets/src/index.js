@@ -4235,6 +4235,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	}
 
 	boardRootElement = root;
+	boardRootElement.style.overflow = 'visible';
+	boardRootElement.style.overflowX = 'visible';
+	boardRootElement.style.overflowY = 'visible';
 	applyAppearanceTheme(boardRootElement);
 	document.addEventListener('fullscreenchange', updateFullscreenButton);
 	syncLayoutMode(root);

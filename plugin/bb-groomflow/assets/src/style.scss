@@ -44,7 +44,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	max-width: none;
 	margin-inline: 0;
 	position: relative;
-	overflow: hidden;
+	overflow: visible !important;
 
 	// Normalize form controls inside the board so front-end matches admin.
 	button,
@@ -96,6 +96,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	width: 100%;
 	max-width: none;
 	margin-inline: 0;
+	overflow: visible !important;
 }
 
 #bbgf-board-root.bbgf-board-wrapper--display {
@@ -1039,7 +1040,8 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 
 .bbgf-modal__dialog {
 	position: relative;
-	max-width: clamp(320px, 60vw, 640px);
+	max-width: min(700px, 100vw - 2rem);
+	width: min(100vw - 2rem, 700px);
 	max-height: 92vh;
 	margin: 5vh auto;
 	background: var(--bbgf-card-bg);
@@ -1049,7 +1051,6 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 	display: flex;
 	flex-direction: column;
 	gap: 0;
-	width: calc(100% - 2rem);
 }
 
 .bbgf-modal__header {
@@ -1129,7 +1130,7 @@ $bbgf-card-shadow: 0 12px 26px rgba(10, 18, 31, 0.18);
 }
 
 .bbgf-modal__title {
-	font-size: clamp(0.98rem, 1vw + 0.8rem, 1.1rem);
+	font-size: clamp(0.9rem, 0.7vw + 0.7rem, 1rem);
 	margin: 0;
 	line-height: 1.2;
 	word-break: break-word;
