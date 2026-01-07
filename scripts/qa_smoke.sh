@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-/opt/qa/artifacts}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_PATH="${ARTIFACTS_DIR}/qa-smoke-${TIMESTAMP}.txt"
+PATH="${ROOT_DIR}/scripts:${PATH}"
 
 mkdir -p "${ARTIFACTS_DIR}"
 

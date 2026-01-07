@@ -55,7 +55,7 @@ class Flags_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Flags', 'bb-groomflow' ),
 			__( 'Flags', 'bb-groomflow' ),
-			'bbgf_manage_flags', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_flags',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			40
@@ -70,7 +70,7 @@ class Flags_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_flags' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_flags' ) ) {
 			return;
 		}
 
@@ -143,7 +143,7 @@ class Flags_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_flags' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_flags' ) ) {
 			return;
 		}
 
@@ -167,7 +167,7 @@ class Flags_Admin implements Admin_Page_Interface {
 	 * Render admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_flags' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_flags' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage flags.', 'bb-groomflow' ) );
 		}
 

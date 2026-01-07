@@ -52,7 +52,7 @@ class Settings_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Settings', 'bb-groomflow' ),
 			__( 'Settings', 'bb-groomflow' ),
-			'bbgf_manage_settings', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_settings',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			70
@@ -67,7 +67,7 @@ class Settings_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_settings' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_settings' ) ) {
 			return;
 		}
 
@@ -87,7 +87,7 @@ class Settings_Admin implements Admin_Page_Interface {
 	 * Render the settings page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_settings' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_settings' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage settings.', 'bb-groomflow' ) );
 		}
 

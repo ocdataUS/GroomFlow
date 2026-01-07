@@ -2,6 +2,8 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2026-01-07 | codex | Compliance guardrails + Visit repo | `SKIP_ASSET_BUILD=1 bash scripts/qa_smoke.sh` | `/opt/qa/artifacts/qa-smoke-20260107T173204Z.txt`, `/opt/qa/artifacts/phpcs-1767807140.txt` | PASS |
+| 2026-01-07 | codex | Compliance guardrails + Visit repo | Manual admin happy-path via WP-CLI edits + settings reset | `/opt/qa/artifacts/manual-admin-happy-path-20260107T173416.txt` | PASS |
 | 2026-01-07 | codex | Support matrix + tooling baseline | `bash scripts/qa_smoke.sh` | `/opt/qa/artifacts/support-matrix-1767804464/qa-smoke-20260107T165328Z.txt`, `/opt/qa/artifacts/support-matrix-1767804464/phpcs-1767804831.txt`, `/opt/qa/artifacts/support-matrix-1767804464/qa-smoke-2.txt` | PASS |
 | 2026-01-07 | codex | Support matrix + tooling baseline | `node scripts/capture_artifacts.js after` | `/opt/qa/artifacts/support-matrix-1767804464/board-after-*.png`, `/opt/qa/artifacts/support-matrix-1767804464/modal-after-*.png`, `/opt/qa/artifacts/support-matrix-1767804464/capture-after.txt` | PASS |
 | 2026-01-06 | codex | Refactor hardening | `qa-phpcs plugin/bb-groomflow` | `/opt/qa/artifacts/refactor-1767762104/phpcs.txt` | PASS |

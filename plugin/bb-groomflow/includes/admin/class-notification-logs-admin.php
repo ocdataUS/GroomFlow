@@ -56,7 +56,7 @@ class Notification_Logs_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Notification Activity', 'bb-groomflow' ),
 			__( 'Notification Activity', 'bb-groomflow' ),
-			'bbgf_manage_notifications', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_notifications',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			54
@@ -69,7 +69,7 @@ class Notification_Logs_Admin implements Admin_Page_Interface {
 	 * @return void
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			wp_die( esc_html__( 'You do not have permission to view notification logs.', 'bb-groomflow' ) );
 		}
 
@@ -117,7 +117,7 @@ class Notification_Logs_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			return;
 		}
 
@@ -297,7 +297,7 @@ class Notification_Logs_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			return;
 		}
 

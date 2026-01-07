@@ -719,7 +719,7 @@ class Visits_Controller extends REST_Controller {
 		$is_primary = $request->get_param( 'is_primary' );
 		$is_public  = $this->is_public_token_request( $request );
 
-		$capability_check = $this->check_capability( 'bbgf_edit_visits' ); // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		$capability_check = $this->check_capability( 'bbgf_edit_visits' );
 		if ( is_wp_error( $capability_check ) ) {
 			return $capability_check;
 		}

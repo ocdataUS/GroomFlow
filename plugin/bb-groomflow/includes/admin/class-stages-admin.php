@@ -54,7 +54,7 @@ class Stages_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Stages', 'bb-groomflow' ),
 			__( 'Stages', 'bb-groomflow' ),
-			'bbgf_manage_views', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_views',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			10
@@ -74,7 +74,7 @@ class Stages_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_views' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_views' ) ) {
 			return;
 		}
 
@@ -166,7 +166,7 @@ class Stages_Admin implements Admin_Page_Interface {
 	 * Render the stages admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_views' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_views' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage stages.', 'bb-groomflow' ) );
 		}
 

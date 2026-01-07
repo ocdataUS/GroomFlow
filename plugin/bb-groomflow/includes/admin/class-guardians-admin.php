@@ -53,7 +53,7 @@ class Guardians_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Guardians', 'bb-groomflow' ),
 			__( 'Guardians', 'bb-groomflow' ),
-			'bbgf_edit_visits', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_edit_visits',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			22
@@ -68,7 +68,7 @@ class Guardians_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_edit_visits' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_edit_visits' ) ) {
 			return;
 		}
 
@@ -142,7 +142,7 @@ class Guardians_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_edit_visits' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_edit_visits' ) ) {
 			return;
 		}
 
@@ -166,7 +166,7 @@ class Guardians_Admin implements Admin_Page_Interface {
 	 * Render admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_edit_visits' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_edit_visits' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage guardians.', 'bb-groomflow' ) );
 		}
 

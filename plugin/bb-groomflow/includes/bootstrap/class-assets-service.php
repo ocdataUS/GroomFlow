@@ -327,11 +327,11 @@ class Assets_Service {
 		);
 
 		$settings['capabilities'] = array(
-			'viewBoard'      => current_user_can( 'bbgf_view_board' ), // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered in register_roles_and_capabilities().
-			'moveStages'     => current_user_can( 'bbgf_move_stages' ), // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered in register_roles_and_capabilities().
-			'editVisits'     => current_user_can( 'bbgf_edit_visits' ), // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered in register_roles_and_capabilities().
-			'manageViews'    => current_user_can( 'bbgf_manage_views' ), // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered in register_roles_and_capabilities().
-			'manageServices' => current_user_can( 'bbgf_manage_services' ), // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered in register_roles_and_capabilities().
+			'viewBoard'      => current_user_can( 'bbgf_view_board' ), // Custom capability registered in register_roles_and_capabilities().
+			'moveStages'     => current_user_can( 'bbgf_move_stages' ), // Custom capability registered in register_roles_and_capabilities().
+			'editVisits'     => current_user_can( 'bbgf_edit_visits' ), // Custom capability registered in register_roles_and_capabilities().
+			'manageViews'    => current_user_can( 'bbgf_manage_views' ), // Custom capability registered in register_roles_and_capabilities().
+			'manageServices' => current_user_can( 'bbgf_manage_services' ), // Custom capability registered in register_roles_and_capabilities().
 		);
 
 		$current_user     = wp_get_current_user();

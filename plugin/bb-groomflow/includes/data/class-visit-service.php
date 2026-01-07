@@ -67,14 +67,22 @@ class Visit_Service {
 	private array $tables;
 
 	/**
+	 * Visit repository for SQL queries.
+	 *
+	 * @var Visit_Repository
+	 */
+	private Visit_Repository $visit_repository;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin $plugin Plugin instance.
 	 */
 	public function __construct( Plugin $plugin ) {
-		$this->plugin = $plugin;
-		$this->wpdb   = $plugin->get_wpdb();
-		$this->tables = $plugin->get_table_names();
+		$this->plugin           = $plugin;
+		$this->wpdb             = $plugin->get_wpdb();
+		$this->tables           = $plugin->get_table_names();
+		$this->visit_repository = new Visit_Repository( $this->wpdb, $this->tables );
 	}
 
 	/**
@@ -235,7 +243,6 @@ class Visit_Service {
 	 * @return array<string,mixed>
 	 */
 	public function build_board_payload( array $args ): array {
-		$wpdb                  = $this->wpdb;
 		$view                  = $args['view'];
 		$modified_after        = $args['modified_after'] ?? '';
 		$stage_filter_list     = isset( $args['stages'] ) && is_array( $args['stages'] ) ? array_filter(
@@ -279,47 +286,8 @@ class Visit_Service {
 			}
 		}
 
-		$modified_clause = '';
-		$modified_args   = array();
-		if ( is_string( $modified_after ) && '' !== $modified_after ) {
-			$modified_time = strtotime( $modified_after );
-			if ( false !== $modified_time ) {
-				$modified_clause = ' AND v.updated_at >= %s';
-				$modified_args[] = gmdate( 'Y-m-d H:i:s', $modified_time );
-			}
-		}
-
-		$stage_clause = '';
-		$args_sql     = array_merge(
-			array(
-				$this->tables['visits'],
-				$this->tables['clients'],
-				$this->tables['guardians'],
-				$view_id,
-				'completed',
-			),
-			$modified_args
-		);
-
-		if ( ! empty( $stage_filter_list ) ) {
-			$placeholders = implode( ',', array_fill( 0, count( $stage_filter_list ), '%s' ) );
-			$stage_clause = ' AND v.current_stage IN (' . $placeholders . ')';
-			$args_sql     = array_merge( $args_sql, $stage_filter_list );
-		}
-
-		$visits = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			$wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Placeholder list built from sanitized IDs.
-				'SELECT v.id, v.client_id, v.guardian_id, v.view_id, v.current_stage, v.status, v.check_in_at, v.check_out_at, v.assigned_staff, v.instructions, v.private_notes, v.public_notes, v.timer_started_at, v.timer_elapsed_seconds, v.created_at, v.updated_at,
-					c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight, c.meta AS client_meta,
-					g.first_name AS guardian_first_name, g.last_name AS guardian_last_name, g.phone_mobile AS guardian_phone, g.email AS guardian_email
-				FROM %i AS v
-				LEFT JOIN %i AS c ON c.id = v.client_id
-				LEFT JOIN %i AS g ON g.id = v.guardian_id
-				WHERE v.view_id = %d AND v.check_out_at IS NULL AND (v.status IS NULL OR v.status <> %s)' . $modified_clause . $stage_clause . ' ORDER BY COALESCE(v.check_in_at, v.created_at, v.updated_at) ASC, v.id ASC', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Dynamic clauses built from sanitized values.
-				...$args_sql
-			),
-			ARRAY_A
-		);
+		$modified_after = is_string( $modified_after ) ? $modified_after : '';
+		$visits         = $this->visit_repository->get_board_visits( $view_id, $stage_filter_list, $modified_after );
 
 		$visit_ids = array_map(
 			static function ( $row ) {
@@ -701,9 +669,10 @@ class Visit_Service {
 	public function get_client_history( int $client_id, int $exclude_visit = 0, int $page = 1, int $per_page = 5 ): array {
 		$client_id     = (int) $client_id;
 		$exclude_visit = (int) $exclude_visit;
-		$page          = max( 1, (int) $page );
-		$per_page      = max( 1, min( 20, (int) $per_page ) );
-		$offset        = ( $page - 1 ) * $per_page;
+		$pagination    = Query_Helpers::normalize_pagination( (int) $page, (int) $per_page, 20 );
+		$page          = $pagination['page'];
+		$per_page      = $pagination['per_page'];
+		$offset        = $pagination['offset'];
 		$limit_plus    = $per_page + 1; // fetch one extra to signal has_more.
 
 		if ( $client_id <= 0 ) {
@@ -1962,28 +1931,7 @@ class Visit_Service {
 	 * @return array<string,mixed>|null
 	 */
 	public function get_visit_row( int $visit_id ): ?array {
-		if ( $visit_id <= 0 ) {
-			return null;
-		}
-
-		$wpdb = $this->wpdb;
-		$row  = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			$wpdb->prepare(
-				'SELECT v.*, c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight, c.meta AS client_meta,
-					g.first_name AS guardian_first_name, g.last_name AS guardian_last_name, g.phone_mobile AS guardian_phone, g.email AS guardian_email
-				FROM %i AS v
-				LEFT JOIN %i AS c ON c.id = v.client_id
-				LEFT JOIN %i AS g ON g.id = v.guardian_id
-				WHERE v.id = %d',
-				$this->tables['visits'],
-				$this->tables['clients'],
-				$this->tables['guardians'],
-				$visit_id
-			),
-			ARRAY_A
-		);
-
-		return is_array( $row ) ? $row : null;
+		return $this->visit_repository->get_visit_row( $visit_id );
 	}
 
 	/**

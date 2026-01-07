@@ -53,7 +53,7 @@ class Packages_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Packages', 'bb-groomflow' ),
 			__( 'Packages', 'bb-groomflow' ),
-			'bbgf_manage_services', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_services',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			32
@@ -68,7 +68,7 @@ class Packages_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			return;
 		}
 
@@ -228,7 +228,7 @@ class Packages_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			return;
 		}
 
@@ -259,7 +259,7 @@ class Packages_Admin implements Admin_Page_Interface {
 	 * Render the packages administration page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage packages.', 'bb-groomflow' ) );
 		}
 

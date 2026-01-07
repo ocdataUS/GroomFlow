@@ -53,7 +53,7 @@ class Services_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Services', 'bb-groomflow' ),
 			__( 'Services', 'bb-groomflow' ),
-			'bbgf_manage_services', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_services',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			30
@@ -68,7 +68,7 @@ class Services_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			return;
 		}
 
@@ -192,7 +192,7 @@ class Services_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			return;
 		}
 
@@ -222,7 +222,7 @@ class Services_Admin implements Admin_Page_Interface {
 	 * Render admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_services' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_services' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage services.', 'bb-groomflow' ) );
 		}
 

@@ -54,7 +54,7 @@ class Notifications_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Notifications', 'bb-groomflow' ),
 			__( 'Notifications', 'bb-groomflow' ),
-			'bbgf_manage_notifications', // phpcs:ignore WordPress.WP.Capabilities.Unknown -- custom capability defined by plugin.
+			'bbgf_manage_notifications', // custom capability defined by plugin.
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			50
@@ -74,7 +74,7 @@ class Notifications_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			return;
 		}
 
@@ -160,7 +160,7 @@ class Notifications_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			return;
 		}
 
@@ -201,7 +201,7 @@ class Notifications_Admin implements Admin_Page_Interface {
 	 * Render admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_notifications' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage notifications.', 'bb-groomflow' ) );
 		}
 

@@ -50,6 +50,8 @@ require_once BBGF_PLUGIN_DIR . 'includes/admin/class-notification-triggers-list-
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-notification-logs-admin.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-notification-logs-list-table.php';
 require_once BBGF_PLUGIN_DIR . 'includes/notifications/class-notifications-service.php';
+require_once BBGF_PLUGIN_DIR . 'includes/data/class-query-helpers.php';
+require_once BBGF_PLUGIN_DIR . 'includes/data/class-visit-repository.php';
 require_once BBGF_PLUGIN_DIR . 'includes/data/class-visit-service.php';
 require_once BBGF_PLUGIN_DIR . 'includes/bootstrap/class-assets-service.php';
 require_once BBGF_PLUGIN_DIR . 'includes/bootstrap/class-admin-menu-service.php';

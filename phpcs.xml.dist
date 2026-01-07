@@ -1,7 +1,6 @@
 <?xml version="1.0"?>
 <ruleset name="Bubbles &amp; Bows GroomFlow">
     <description>WordPress Coding Standards for the GroomFlow plugin.</description>
-    <config name="installed_paths" value="${WPCS_DIR}" />
     <arg name="extensions" value="php" />
     <arg value="ps" />
 
@@ -11,6 +10,21 @@
     <exclude-pattern>*/build/*</exclude-pattern>
 
     <rule ref="WordPress" />
+    <rule ref="WordPress.WP.Capabilities">
+        <properties>
+            <property name="custom_capabilities" type="array">
+                <element value="bbgf_view_board" />
+                <element value="bbgf_move_stages" />
+                <element value="bbgf_edit_visits" />
+                <element value="bbgf_manage_views" />
+                <element value="bbgf_manage_services" />
+                <element value="bbgf_manage_flags" />
+                <element value="bbgf_manage_notifications" />
+                <element value="bbgf_view_reports" />
+                <element value="bbgf_manage_settings" />
+            </property>
+        </properties>
+    </rule>
     <rule ref="WordPress-Extra" />
     <rule ref="WordPress-Docs" />
 </ruleset>

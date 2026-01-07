@@ -46,6 +46,14 @@ All artifacts land in: `/opt/qa/artifacts`.
 
 ## WordPress QA Commands
 
+- **Fast local gate (PHPCS + optional lint)**
+  ```bash
+  bash scripts/qa_fast.sh
+  SKIP_PHP_LINT=1 bash scripts/qa_fast.sh
+  LINT_CHANGED=1 bash scripts/qa_fast.sh
+  ```
+  Use this when iterating or before sharing a patch. Run `bash scripts/qa_smoke.sh` for full Docker build/install/seed + board smoke coverage.
+
 - **QA smoke (build/install + board + notifications + stats)**
   ```bash
   bash scripts/qa_smoke.sh                       # full run (build ZIP, install in Docker, seed, PHPCS, board/stage move/stats smoke)
@@ -53,9 +61,10 @@ All artifacts land in: `/opt/qa/artifacts`.
   # → /opt/qa/artifacts/qa-smoke-<timestamp>.txt plus PHPCS artifact
   ```
 
-- **PHPCS report → artifact** (WordPress standard)
+- **PHPCS report → artifact**
   ```bash
-  qa-phpcs /path/to/theme-or-plugin
+  qa-phpcs /path/to/theme-or-plugin           # baseline WordPress standard
+  scripts/qa-phpcs /path/to/theme-or-plugin   # repo ruleset (custom capabilities)
   # ⇒ /opt/qa/artifacts/phpcs-<timestamp>.txt
   ```
 

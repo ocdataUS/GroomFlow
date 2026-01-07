@@ -75,7 +75,7 @@ class Admin_Menu_Service {
 		add_menu_page(
 			__( 'GroomFlow Dashboard', 'bb-groomflow' ),
 			__( 'GroomFlow', 'bb-groomflow' ),
-			self::MENU_CAPABILITY, // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered on activation.
+			self::MENU_CAPABILITY, // Custom capability registered on activation.
 			self::MENU_SLUG,
 			array( $this, 'render_dashboard_page' ),
 			'dashicons-pets',
@@ -86,7 +86,7 @@ class Admin_Menu_Service {
 			self::MENU_SLUG,
 			__( 'Dashboard', 'bb-groomflow' ),
 			__( 'Dashboard', 'bb-groomflow' ),
-			self::MENU_CAPABILITY, // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered on activation.
+			self::MENU_CAPABILITY, // Custom capability registered on activation.
 			self::MENU_SLUG,
 			array( $this, 'render_dashboard_page' ),
 			self::DASHBOARD_ORDER
@@ -133,7 +133,7 @@ class Admin_Menu_Service {
 	 * @param int    $position   Optional menu position.
 	 */
 	private function register_stub_submenu( string $slug, string $page_title, string $menu_title, string $capability, string $message, int $position = 80 ): void {
-		add_submenu_page( // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capabilities registered on activation.
+		add_submenu_page( // Custom capabilities registered on activation.
 			self::MENU_SLUG,
 			$page_title,
 			$menu_title,

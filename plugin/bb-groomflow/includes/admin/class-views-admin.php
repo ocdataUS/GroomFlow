@@ -62,7 +62,7 @@ class Views_Admin implements Admin_Page_Interface {
 			Admin_Menu_Service::MENU_SLUG,
 			__( 'Views', 'bb-groomflow' ),
 			__( 'Views', 'bb-groomflow' ),
-			'bbgf_manage_views', // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			'bbgf_manage_views',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' ),
 			12
@@ -77,7 +77,7 @@ class Views_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_views' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_views' ) ) {
 			return;
 		}
 
@@ -221,7 +221,7 @@ class Views_Admin implements Admin_Page_Interface {
 			return;
 		}
 
-		if ( ! current_user_can( 'bbgf_manage_views' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_views' ) ) {
 			return;
 		}
 
@@ -252,7 +252,7 @@ class Views_Admin implements Admin_Page_Interface {
 	 * Render admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'bbgf_manage_views' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+		if ( ! current_user_can( 'bbgf_manage_views' ) ) {
 			wp_die( esc_html__( 'You do not have permission to manage views.', 'bb-groomflow' ) );
 		}
 
