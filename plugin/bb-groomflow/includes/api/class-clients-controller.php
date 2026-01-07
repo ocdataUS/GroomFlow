@@ -18,7 +18,6 @@ use wpdb;
  * Provides CRUD endpoints for client records.
  */
 class Clients_Controller extends REST_Controller {
-	// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 	/**
 	 * REST route base.
 	 *
@@ -240,56 +239,69 @@ class Clients_Controller extends REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function get_items( $request ): WP_REST_Response {
+		$wpdb = $this->wpdb;
+
 		$search   = trim( (string) $request->get_param( 'search' ) );
 		$page     = max( 1, (int) $request->get_param( 'page' ) );
 		$per_page = (int) $request->get_param( 'per_page' );
 		$per_page = max( 1, min( 100, $per_page ) );
 		$offset   = ( $page - 1 ) * $per_page;
 
-		$table = $this->tables['clients'];
-
 		if ( '' !== $search ) {
 			$like = '%' . $this->wpdb->esc_like( $search ) . '%';
 
-			$query = $this->wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
-				"SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
-				FROM {$table}
-				WHERE (name LIKE %s OR breed LIKE %s)
-				ORDER BY name ASC
-				LIMIT %d OFFSET %d",
-				$like,
-				$like,
-				$per_page,
-				$offset
+			$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					'SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
+					FROM %i
+					WHERE (name LIKE %s OR breed LIKE %s)
+					ORDER BY name ASC
+					LIMIT %d OFFSET %d',
+					$this->tables['clients'],
+					$like,
+					$like,
+					$per_page,
+					$offset
+				),
+				ARRAY_A
 			);
 
-			$count_sql = $this->wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
-				"SELECT COUNT(*) FROM {$table} WHERE (name LIKE %s OR breed LIKE %s)",
-				$like,
-				$like
+			$count = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					'SELECT COUNT(*) FROM %i WHERE (name LIKE %s OR breed LIKE %s)',
+					$this->tables['clients'],
+					$like,
+					$like
+				)
 			);
 		} else {
-			$query = $this->wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
-				"SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
-				FROM {$table}
-				ORDER BY name ASC
-				LIMIT %d OFFSET %d",
-				$per_page,
-				$offset
+			$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					'SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
+					FROM %i
+					ORDER BY name ASC
+					LIMIT %d OFFSET %d',
+					$this->tables['clients'],
+					$per_page,
+					$offset
+				),
+				ARRAY_A
 			);
 
-			$count_sql = "SELECT COUNT(*) FROM {$table}"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+			$count = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					'SELECT COUNT(*) FROM %i',
+					$this->tables['clients']
+				)
+			);
 		}
 
-		$rows = $this->wpdb->get_results( $query, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 		$data = array();
 
 		foreach ( $rows as $row ) {
 			$item   = $this->prepare_item_for_response( $row, $request );
 			$data[] = $this->prepare_response_for_collection( $item );
 		}
-
-		$count = (int) $this->wpdb->get_var( $count_sql ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 
 		$response = rest_ensure_response( $data );
 		$response->header( 'X-WP-Total', (string) $count );
@@ -571,15 +583,17 @@ class Clients_Controller extends REST_Controller {
 			return null;
 		}
 
-		$row = $this->wpdb->get_row(
-			$this->wpdb->prepare(
-				"SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
-				FROM {$this->tables['clients']}
-				WHERE id = %d",
+		$wpdb = $this->wpdb;
+		$row  = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				'SELECT id, name, slug, guardian_id, breed, weight, sex, dob, temperament, preferred_groomer, notes, meta, created_at, updated_at
+				FROM %i
+				WHERE id = %d',
+				$this->tables['clients'],
 				$client_id
-			), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+			),
 			ARRAY_A
-		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		);
 
 		return is_array( $row ) ? $row : null;
 	}
@@ -592,7 +606,19 @@ class Clients_Controller extends REST_Controller {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function validate_and_prepare_item( WP_REST_Request $request, int $client_id = 0 ) {
-		$name = trim( (string) $request->get_param( 'name' ) );
+		$current_row  = null;
+		$current_meta = array();
+		if ( $client_id > 0 ) {
+			$current_row = $this->get_client( $client_id );
+			if ( $current_row ) {
+				$current_meta = $this->decode_meta( $current_row['meta'] ?? null );
+			}
+		}
+
+		$name_source = $request->has_param( 'name' ) || $client_id <= 0
+			? $request->get_param( 'name' )
+			: ( $current_row['name'] ?? '' );
+		$name        = trim( (string) $name_source );
 		if ( '' === $name ) {
 			return new WP_Error(
 				'bbgf_client_missing_name',
@@ -601,7 +627,9 @@ class Clients_Controller extends REST_Controller {
 			);
 		}
 
-		$guardian_id = (int) $request->get_param( 'guardian_id' );
+		$guardian_id = $request->has_param( 'guardian_id' )
+			? (int) $request->get_param( 'guardian_id' )
+			: (int) ( $current_row['guardian_id'] ?? 0 );
 		if ( $guardian_id < 0 ) {
 			$guardian_id = 0;
 		}
@@ -614,7 +642,10 @@ class Clients_Controller extends REST_Controller {
 			);
 		}
 
-		$dob = trim( (string) $request->get_param( 'dob' ) );
+		$dob_source = $request->has_param( 'dob' )
+			? $request->get_param( 'dob' )
+			: ( $current_row['dob'] ?? '' );
+		$dob        = trim( (string) $dob_source );
 		if ( '' !== $dob && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $dob ) ) {
 			return new WP_Error(
 				'bbgf_client_invalid_dob',
@@ -623,7 +654,9 @@ class Clients_Controller extends REST_Controller {
 			);
 		}
 
-		$weight_param = $request->get_param( 'weight' );
+		$weight_param = $request->has_param( 'weight' )
+			? $request->get_param( 'weight' )
+			: ( $current_row['weight'] ?? null );
 		$weight       = null;
 		if ( null !== $weight_param && '' !== $weight_param ) {
 			if ( ! is_numeric( $weight_param ) ) {
@@ -634,14 +667,6 @@ class Clients_Controller extends REST_Controller {
 				);
 			}
 			$weight = round( (float) $weight_param, 2 );
-		}
-
-		$current_meta = array();
-		if ( $client_id > 0 ) {
-			$current_row = $this->get_client( $client_id );
-			if ( $current_row ) {
-				$current_meta = $this->decode_meta( $current_row['meta'] ?? null );
-			}
 		}
 
 		$meta_param = $request->get_param( 'meta' );
@@ -676,13 +701,23 @@ class Clients_Controller extends REST_Controller {
 		return array(
 			'name'              => sanitize_text_field( $name ),
 			'guardian_id'       => $guardian_id,
-			'breed'             => sanitize_text_field( (string) $request->get_param( 'breed' ) ),
+			'breed'             => sanitize_text_field(
+				(string) ( $request->has_param( 'breed' ) ? $request->get_param( 'breed' ) : ( $current_row['breed'] ?? '' ) )
+			),
 			'weight'            => $weight,
-			'sex'               => sanitize_text_field( (string) $request->get_param( 'sex' ) ),
+			'sex'               => sanitize_text_field(
+				(string) ( $request->has_param( 'sex' ) ? $request->get_param( 'sex' ) : ( $current_row['sex'] ?? '' ) )
+			),
 			'dob'               => '' !== $dob ? $dob : null,
-			'temperament'       => sanitize_text_field( (string) $request->get_param( 'temperament' ) ),
-			'preferred_groomer' => sanitize_text_field( (string) $request->get_param( 'preferred_groomer' ) ),
-			'notes'             => sanitize_textarea_field( (string) $request->get_param( 'notes' ) ),
+			'temperament'       => sanitize_text_field(
+				(string) ( $request->has_param( 'temperament' ) ? $request->get_param( 'temperament' ) : ( $current_row['temperament'] ?? '' ) )
+			),
+			'preferred_groomer' => sanitize_text_field(
+				(string) ( $request->has_param( 'preferred_groomer' ) ? $request->get_param( 'preferred_groomer' ) : ( $current_row['preferred_groomer'] ?? '' ) )
+			),
+			'notes'             => sanitize_textarea_field(
+				(string) ( $request->has_param( 'notes' ) ? $request->get_param( 'notes' ) : ( $current_row['notes'] ?? '' ) )
+			),
 			'meta'              => wp_json_encode( $meta ),
 		);
 	}
@@ -698,12 +733,14 @@ class Clients_Controller extends REST_Controller {
 			return false;
 		}
 
-		$exists = $this->wpdb->get_var(
-			$this->wpdb->prepare(
-				"SELECT COUNT(*) FROM {$this->tables['guardians']} WHERE id = %d",
+		$wpdb   = $this->wpdb;
+		$exists = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM %i WHERE id = %d',
+				$this->tables['guardians'],
 				$guardian_id
-			) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
-		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			)
+		);
 
 		return (int) $exists > 0;
 	}
@@ -766,6 +803,4 @@ class Clients_Controller extends REST_Controller {
 
 		return $decoded;
 	}
-
-	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 }
