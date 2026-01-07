@@ -42,7 +42,7 @@ async function captureBoard(page, viewport, prefix) {
 	await page.setViewportSize({ width: viewport.width, height: viewport.height });
 	await page.goto(boardUrl, { waitUntil: 'networkidle' });
 	await page.waitForSelector('#wpadminbar', { timeout: 10000 });
-	await page.waitForSelector('.bbgf-card', { timeout: 15000 });
+	await page.waitForSelector('.bbgf-card', { timeout: 15000, state: 'visible' });
 	await page.waitForTimeout(1200);
 
 	const filePath = path.join(artifactDir, `board-${prefix}-${viewport.name}.png`);
@@ -53,14 +53,14 @@ async function captureBoard(page, viewport, prefix) {
 async function captureModal(page, viewport, prefix) {
 	await page.setViewportSize({ width: viewport.width, height: viewport.height });
 	await page.goto(boardUrl, { waitUntil: 'networkidle' });
-	await page.waitForSelector('.bbgf-card', { timeout: 15000 });
+	await page.waitForSelector('.bbgf-card', { timeout: 15000, state: 'visible' });
 	const firstCard = await page.$('.bbgf-card');
 	if (!firstCard) {
 		throw new Error('No cards found on board');
 	}
 
 	await firstCard.click();
-	await page.waitForSelector('#bbgf-modal .bbgf-modal__dialog', { timeout: 15000 });
+	await page.waitForSelector('#bbgf-modal .bbgf-modal__dialog', { timeout: 15000, state: 'visible' });
 	await page.waitForTimeout(1200);
 
 	const filePath = path.join(artifactDir, `modal-${prefix}-${viewport.name}.png`);
@@ -74,14 +74,18 @@ async function run() {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	await login(page);
+	try {
+		await login(page);
 
-	for (const viewport of viewports) {
-		await captureBoard(page, viewport, mode);
-		await captureModal(page, viewport, mode);
+		for (const viewport of viewports) {
+			await captureBoard(page, viewport, mode);
+			await captureModal(page, viewport, mode);
+		}
+	} finally {
+		await page.close();
+		await context.close();
+		await browser.close();
 	}
-
-	await browser.close();
 }
 
 run().catch((error) => {
