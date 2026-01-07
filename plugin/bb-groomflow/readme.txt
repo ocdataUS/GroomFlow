@@ -1,8 +1,8 @@
 === Bubbles & Bows GroomFlow ===
 Contributors: ocdata
-Requires at least: 6.4
-Tested up to: 6.5
-Requires PHP: 8.1
+Requires at least: 6.8
+Tested up to: 6.9
+Requires PHP: 8.2
 Stable tag: 0.1.0-dev
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html

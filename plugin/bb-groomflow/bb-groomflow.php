@@ -4,8 +4,9 @@
  * Plugin URI:        https://github.com/ocdataUS/GroomFlow
  * Description:       Native WordPress Kanban workflow for animal grooming salons.
  * Version:           0.1.0-dev
- * Requires at least: 6.4
- * Requires PHP:      8.1
+ * Requires at least: 6.8
+ * Tested up to:      6.9
+ * Requires PHP:      8.2
  * Author:            OC Data
  * Text Domain:       bb-groomflow
  * Domain Path:       /languages

@@ -20,7 +20,7 @@ This machine has a shared **QA toolbelt** installed for any stateless agent.
 
 ### Paths & Environment
 - Artifacts dir: `/opt/qa/artifacts`
-- (Playwright tooling removed — use Chrome CDP or other available helpers)
+- Playwright (optional) for UI capture scripts; install browsers with `npx playwright install chromium`
 - Browsers cache: `/opt/qa/ms-playwright`
 - Chromium executable: `$CHROME_PATH` (auto‑detected)
 - CDP discovery URL: `http://127.0.0.1:9222/json/version`
@@ -77,7 +77,7 @@ All artifacts land in: `/opt/qa/artifacts`.
   - After every install, walk the happy path for Stages, Guardians, Clients, Services, Packages, Flags, Views, and Settings: create a record, save, re-open in edit mode, and confirm all previously entered values re-populate (emoji/color pickers, selects, notes).
   - For Packages specifically, double-check that included services stay checked and their order inputs persist to prevent the "Select at least one service" regression.
   - Log the results in your breadcrumb. If a bug appears, capture repro steps plus any `qa-wp` or screenshot artifacts.
-  - Automate repeat checks when possible with WP-CLI (`qa-wp /var/www/html option get ...`) or lightweight scripting; Playwright support has been removed.
+  - Automate repeat checks when possible with WP-CLI (`qa-wp /var/www/html option get ...`) or lightweight scripting; Playwright is available for UI capture scripts if needed.
 
 ### Manual Admin Happy-Path Template
 When a GUI session is not available, script the persistence checks via WP-CLI and store the entire transcript as an artifact:
@@ -244,7 +244,7 @@ qa-trivy-image node:22        # Trivy image scan → text report
 
 - Executables: `/opt/qa/bin`  
 - Artifacts: `/opt/qa/artifacts`  
-- (Playwright project removed)  
+- Playwright browsers cache: `/opt/qa/ms-playwright` (install with `npx playwright install chromium`)  
 - Config reference: `~/.agent/capabilities.json`
 
 ## Tips & Tricks

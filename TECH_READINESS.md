@@ -5,7 +5,7 @@ Quick reference to keep installs reproducible and marketplace compliant.
 ## Environment
 - **OS:** WSL Ubuntu
 - **PHP:** 8.2 inside Docker WP
-- **WordPress:** 6.8.3 (`docker/docker-compose.yml`)
+- **WordPress:** 6.9.0 (`docker/docker-compose.yml`)
 - **Tooling:** QA wrappers in `/opt/qa/bin` (see `QA_TOOLBELT.md`)
 
 ## Essential Commands
