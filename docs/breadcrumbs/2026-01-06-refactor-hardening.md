@@ -6,5 +6,6 @@
 - Rebuilt assets, packaged ZIP, reinstalled plugin, and reseeded demo data.
 - Verified flags update, main photo persistence, and client history pagination via REST proofs.
 - Captured board/modal screenshots after update and after-photo state.
+- Logged manual admin happy-path persistence checks via WP-CLI template (`manual-admin-happy-path.txt`).
 
 Artifacts: `/opt/qa/artifacts/refactor-1767762104` (phpcs, build/install logs, REST proofs, board/modal captures).
