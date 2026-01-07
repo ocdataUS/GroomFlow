@@ -564,7 +564,7 @@ const getPlaceholderPhoto = (visit) => {
 	};
 };
 
-const getVisitPhoto = (visit) => extractPrimaryPhoto(visit?.photos) ?? getPlaceholderPhoto(visit);
+const getVisitPhoto = (visit) => extractPrimaryPhoto(visit?.photos) ?? visit?.client?.main_photo ?? getPlaceholderPhoto(visit);
 
 const loadImageForCanvas = async (file) => {
 	if (!file) {
@@ -829,6 +829,18 @@ const getBoardFilterOptions = (board) => {
 					name: safeString(flag?.name ?? ''),
 				});
 			});
+
+			ensureArray(visit.client?.flags).forEach((flag) => {
+				const id = Number(flag?.id);
+				if (!Number.isFinite(id) || flagsMap.has(id)) {
+					return;
+				}
+
+				flagsMap.set(id, {
+					id,
+					name: safeString(flag?.name ?? ''),
+				});
+			});
 		});
 	});
 
@@ -855,6 +867,24 @@ const formatCountdownSeconds = (targetTimestamp) => {
 	const minutes = Math.floor(delta / 60);
 	const seconds = delta % 60;
 	return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+};
+
+let overflowResizeHandler = null;
+
+const applyBoardOverflowState = (wrapper, layoutMode, boardMode) => {
+	if (!wrapper) {
+		return;
+	}
+
+	window.requestAnimationFrame(() => {
+		const overflowing = wrapper.scrollWidth > wrapper.clientWidth + 2;
+		const shouldCenter = layoutMode === 'horizontal' && boardMode !== 'display';
+		wrapper.classList.toggle('bbgf-board--overflowing', overflowing);
+		wrapper.classList.toggle('bbgf-board--centered', shouldCenter && !overflowing);
+		if (overflowing) {
+			wrapper.scrollLeft = 0;
+		}
+	});
 };
 
 const formatCheckIn = (isoString) => {
@@ -1256,6 +1286,94 @@ const createApiClient = (rest = {}, context = {}) => {
 		return response.json();
 	};
 
+	const fetchFlags = async () => {
+		const endpoint = rest.endpoints?.flags;
+		if (!endpoint) {
+			throw new Error('Flags endpoint unavailable');
+		}
+
+		const url = buildUrl(endpoint, {
+			per_page: 100,
+			context: 'view',
+		});
+
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: buildHeaders(),
+			credentials: 'same-origin',
+		});
+
+		if (!response.ok) {
+			throw new Error(`Flags request failed with status ${response.status}`);
+		}
+
+		return response.json();
+	};
+
+	const updateClient = async (clientId, payload = {}) => {
+		const endpoint = rest.endpoints?.clients;
+		if (!endpoint) {
+			throw new Error('Clients endpoint unavailable');
+		}
+
+		const url = buildUrl(`${endpoint}/${encodeURIComponent(clientId)}`);
+		const response = await fetch(url, {
+			method: 'PATCH',
+			headers: {
+				...buildHeaders(),
+				'Content-Type': 'application/json',
+			},
+			credentials: 'same-origin',
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			let message = `Client update failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// ignore
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
+	const fetchClientHistory = async (clientId, params = {}) => {
+		const endpoint = rest.endpoints?.clients;
+		if (!endpoint) {
+			throw new Error('Clients endpoint unavailable');
+		}
+
+		const url = buildUrl(`${endpoint}/${encodeURIComponent(clientId)}/history`, params);
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: buildHeaders(),
+			credentials: 'same-origin',
+		});
+
+		if (!response.ok) {
+			let message = `History request failed with status ${response.status}`;
+			try {
+				const data = await response.json();
+				if (data?.message) {
+					message = data.message;
+				}
+			} catch {
+				// ignore
+			}
+
+			throw new Error(message);
+		}
+
+		return response.json();
+	};
+
 	return {
 		fetchBoard,
 		fetchVisit,
@@ -1267,6 +1385,9 @@ const createApiClient = (rest = {}, context = {}) => {
 		addPhoto,
 		updatePhoto,
 		fetchServices,
+		fetchFlags,
+		updateClient,
+		fetchClientHistory,
 	};
 };
 
@@ -1340,13 +1461,25 @@ const createCardElement = (visit, stage, options) => {
 		info.appendChild(breedLine);
 	}
 
-	const flags = ensureArray(visit.flags);
-	if (flags.length && showFlagsSetting) {
+	const visitFlags = ensureArray(visit.flags);
+	const clientFlags = ensureArray(visit.client?.flags);
+	const combinedFlags = [];
+	const seenFlagIds = new Set();
+	[...visitFlags, ...clientFlags].forEach((flag) => {
+		const id = Number(flag?.id ?? flag);
+		if (!Number.isFinite(id) || seenFlagIds.has(id)) {
+			return;
+		}
+		seenFlagIds.add(id);
+		combinedFlags.push(flag);
+	});
+
+	if (combinedFlags.length && showFlagsSetting) {
 		const flagsWrapper = document.createElement('div');
 		flagsWrapper.className = 'bbgf-card-flags';
 		flagsWrapper.setAttribute('aria-label', copy.flags);
 
-		flags.forEach((flag) => {
+		combinedFlags.forEach((flag) => {
 			const chip = document.createElement('span');
 			chip.className = 'bbgf-flag-chip';
 
@@ -1627,6 +1760,16 @@ const renderBoard = (state, root, config, copy) => {
 	}
 
 	root.appendChild(columnsWrapper);
+
+	const reapplyOverflow = () => applyBoardOverflowState(columnsWrapper, layoutMode, ui.mode);
+	reapplyOverflow();
+	if (typeof window !== 'undefined') {
+		if (overflowResizeHandler) {
+			window.removeEventListener('resize', overflowResizeHandler);
+		}
+		overflowResizeHandler = () => reapplyOverflow();
+		window.addEventListener('resize', overflowResizeHandler, { passive: true });
+	}
 	startTimerTicker(root);
 
 	const existingControls = root.querySelector('.bbgf-floating-controls');
@@ -1998,6 +2141,7 @@ const initialState = {
 		readOnly: false,
 		activeTab: 'summary',
 		isSaving: false,
+		clientFlags: [],
 		form: {
 			instructions: '',
 			publicNotes: '',
@@ -2007,10 +2151,25 @@ const initialState = {
 		error: '',
 		pendingUploads: [],
 		isPreparingUploads: false,
+		history: {
+			items: [],
+			page: 1,
+			perPage: 5,
+			hasMore: false,
+			loaded: false,
+			loading: false,
+			error: '',
+		},
 	},
 	intake: getDefaultIntakeState(settings.initialBoard || null),
 	catalog: {
 		services: {
+			items: [],
+			isLoading: false,
+			loaded: false,
+			error: '',
+		},
+		flags: {
 			items: [],
 			isLoading: false,
 			loaded: false,
@@ -2178,6 +2337,112 @@ const ensureServicesCatalog = async () => {
 	}
 };
 
+const ensureFlagsCatalog = async () => {
+	const state = store.getState();
+	if (state.catalog.flags.loaded || state.catalog.flags.isLoading) {
+		return;
+	}
+
+	store.setState((current) => ({
+		catalog: {
+			...current.catalog,
+			flags: {
+				...current.catalog.flags,
+				isLoading: true,
+				error: '',
+			},
+		},
+	}));
+
+	try {
+		const flags = await api.fetchFlags();
+		store.setState((current) => ({
+			catalog: {
+				...current.catalog,
+				flags: {
+					items: flags,
+					isLoading: false,
+					loaded: true,
+					error: '',
+				},
+			},
+		}));
+	} catch (error) {
+		store.setState((current) => ({
+			catalog: {
+				...current.catalog,
+				flags: {
+					items: ensureArray(current.catalog.flags.items),
+					isLoading: false,
+					loaded: false,
+					error: error?.message || strings.loadingError,
+				},
+			},
+		}));
+	}
+};
+
+const loadClientHistory = async ({ page = 1, append = false } = {}) => {
+	const state = store.getState();
+	const { modal } = state;
+	const visit = modal.visit;
+	if (!visit?.client?.id) {
+		return;
+	}
+
+	const perPage = modal.history?.perPage || 5;
+
+	setModalState((current) => ({
+		...current,
+		history: {
+			...current.history,
+			loading: true,
+			error: '',
+			items: append ? current.history.items : [],
+		},
+	}));
+
+	try {
+		const data = await api.fetchClientHistory(visit.client.id, {
+			page,
+			per_page: perPage,
+			exclude_visit: visit.id,
+		});
+
+		setModalState((current) => ({
+			...current,
+			history: {
+				...current.history,
+				items: append ? [...ensureArray(current.history.items), ...ensureArray(data.items)] : ensureArray(data.items),
+				page: data.page ?? page,
+				perPage,
+				hasMore: Boolean(data.has_more),
+				loaded: true,
+				loading: false,
+				error: '',
+			},
+		}));
+	} catch (error) {
+		setModalState((current) => ({
+			...current,
+			history: {
+				...current.history,
+				loading: false,
+				error: error?.message || strings.loadingError,
+			},
+		}));
+	}
+};
+
+const ensureClientHistory = () => {
+	const state = store.getState();
+	if (state.modal.history.loaded || state.modal.history.loading) {
+		return;
+	}
+
+	loadClientHistory({ page: 1, append: false });
+};
+
 const updateModalFormField = (field, value) => {
 	setModalState((modal) => ({
 		...modal,
@@ -2207,6 +2472,65 @@ const toggleModalService = (serviceId, isChecked) => {
 	});
 };
 
+const toggleClientFlag = (flagId, isChecked) => {
+	setModalState((modal) => {
+		const current = new Set(ensureArray(modal.clientFlags).map((id) => Number(id)));
+		if (isChecked) {
+			current.add(flagId);
+		} else {
+			current.delete(flagId);
+		}
+
+		return {
+			...modal,
+			clientFlags: Array.from(current.values()),
+		};
+	});
+};
+
+const saveClientFlags = async () => {
+	const state = store.getState();
+	const { modal, board } = state;
+	if (!modal.visit?.client?.id || modal.readOnly || board?.readonly) {
+		return;
+	}
+
+	setModalState((current) => ({
+		...current,
+		isSaving: true,
+		error: '',
+	}));
+
+	try {
+		await api.updateClient(modal.visit.client.id, { flags: modal.clientFlags });
+		const refreshed = await api.fetchVisit(modal.visitId, {
+			view: getActiveViewSlug(store.getState()),
+		});
+
+		store.setState((prev) => ({
+			modal: {
+				...prev.modal,
+				visit: refreshed,
+				clientFlags: ensureArray(refreshed?.client?.flags)
+					.map((flag) => Number(flag?.id ?? flag))
+					.filter((id) => Number.isFinite(id)),
+				error: '',
+			},
+		}));
+		refreshBoardAfterModalSave();
+	} catch (error) {
+		setModalState((current) => ({
+			...current,
+			error: error?.message || strings.loadingError,
+		}));
+	} finally {
+		setModalState((current) => ({
+			...current,
+			isSaving: false,
+		}));
+	}
+};
+
 const handleModalTabChange = (tabId) => {
 	setModalState((modal) => ({
 		...modal,
@@ -2216,6 +2540,14 @@ const handleModalTabChange = (tabId) => {
 
 	if (tabId === 'services') {
 		ensureServicesCatalog();
+	}
+
+	if (tabId === 'visit') {
+		ensureFlagsCatalog();
+	}
+
+	if (tabId === 'history') {
+		ensureClientHistory();
 	}
 };
 
@@ -2967,14 +3299,15 @@ const closeModal = () => {
 };
 
 const handleModalContainerClick = (event) => {
-	const role = event.target.dataset.role;
+	const targetEl = event.target.closest('[data-role]');
+	const role = targetEl?.dataset.role;
 	if (role === 'bbgf-modal-close') {
 		closeModal();
 		return;
 	}
 
 	if (role === 'bbgf-modal-tab') {
-		const tab = event.target.dataset.tab;
+		const tab = targetEl.dataset.tab;
 		if (tab) {
 			handleModalTabChange(tab);
 		}
@@ -2982,7 +3315,7 @@ const handleModalContainerClick = (event) => {
 	}
 
 	if (role === 'bbgf-modal-save') {
-		const section = event.target.dataset.section;
+		const section = targetEl.dataset.section;
 		if (section) {
 			handleModalSave(section);
 		}
@@ -2990,7 +3323,7 @@ const handleModalContainerClick = (event) => {
 	}
 
 	if (role === 'bbgf-modal-move') {
-		const direction = event.target.dataset.direction;
+		const direction = targetEl.dataset.direction;
 		if (direction) {
 			handleModalMove(direction);
 		}
@@ -3003,14 +3336,42 @@ const handleModalContainerClick = (event) => {
 	}
 
 	if (role === 'bbgf-upload-photo') {
-		handleModalPhotoUpload(event.target);
+		handleModalPhotoUpload(targetEl);
 		return;
 	}
 
 	if (role === 'bbgf-photo-primary') {
-		const photoId = Number(event.target.dataset.photoId);
+		const photoId = Number(targetEl.dataset.photoId);
 		if (!Number.isNaN(photoId)) {
 			setPhotoAsPrimary(photoId);
+		}
+		return;
+	}
+
+	if (role === 'bbgf-client-flags-save') {
+		saveClientFlags();
+		return;
+	}
+
+	if (role === 'bbgf-history-load-more') {
+		const nextPage = (store.getState().modal.history?.page || 1) + 1;
+		loadClientHistory({ page: nextPage, append: true });
+		return;
+	}
+
+	if (role === 'bbgf-history-toggle') {
+		const dialog = targetEl.closest('.bbgf-modal__dialog');
+		const panelId = targetEl.dataset.target;
+		const panel = panelId ? dialog?.querySelector(`#${panelId}`) : targetEl.nextElementSibling;
+		const isExpanded = targetEl.getAttribute('aria-expanded') === 'true';
+		const nextState = !isExpanded;
+		targetEl.setAttribute('aria-expanded', nextState ? 'true' : 'false');
+		if (panel) {
+			panel.hidden = !nextState;
+		}
+		const parent = targetEl.closest('.bbgf-history-item');
+		if (parent) {
+			parent.classList.toggle('is-open', nextState);
 		}
 		return;
 	}
@@ -3066,6 +3427,13 @@ const handleModalContainerChange = (event) => {
 		}
 	}
 
+	if (dataset?.role === 'bbgf-client-flag') {
+		const flagId = Number(dataset.flagId);
+		if (!Number.isNaN(flagId)) {
+			toggleClientFlag(flagId, checked);
+		}
+	}
+
 	if (dataset?.role === 'bbgf-photo-visibility') {
 		event.stopPropagation();
 		const photoId = Number(dataset.photoId);
@@ -3098,14 +3466,27 @@ const openVisitModal = async (visitId, options = {}) => {
 			readOnly: state.board?.readonly || !settings.capabilities?.editVisits,
 			activeTab: nextTab,
 			isSaving: false,
+			clientFlags: ensureArray(boardVisit?.client?.flags)
+				.map((flag) => Number(flag?.id ?? flag))
+				.filter((id) => Number.isFinite(id)),
 			form: buildModalFormFromVisit(boardVisit),
 			error: '',
 			pendingUploads: [],
 			isPreparingUploads: false,
+			history: {
+				items: [],
+				page: 1,
+				perPage: 5,
+				hasMore: false,
+				loaded: false,
+				loading: false,
+				error: '',
+			},
 		},
 	});
 
 	ensureServicesCatalog();
+	ensureFlagsCatalog();
 
 	try {
 		const visit = await api.fetchVisit(visitId, {
@@ -3118,6 +3499,18 @@ const openVisitModal = async (visitId, options = {}) => {
 				loading: false,
 				visit,
 				form: buildModalFormFromVisit(visit),
+				clientFlags: ensureArray(visit?.client?.flags)
+					.map((flag) => Number(flag?.id ?? flag))
+					.filter((id) => Number.isFinite(id)),
+				history: {
+					...prev.modal.history,
+					items: [],
+					page: 1,
+					hasMore: false,
+					loaded: false,
+					loading: false,
+					error: '',
+				},
 				error: '',
 			},
 		}));
@@ -3481,7 +3874,19 @@ const renderModal = (state, root, copy) => {
 				})
 				.filter(Boolean)
 				.join('');
-			const flagChips = ensureArray(visit.flags)
+			const allFlags = [];
+			const seenFlagIds = new Set();
+			ensureArray(visit.flags)
+				.concat(ensureArray(visit.client?.flags))
+				.forEach((flag) => {
+					const id = Number(flag?.id ?? flag);
+					if (!Number.isFinite(id) || seenFlagIds.has(id)) {
+						return;
+					}
+					seenFlagIds.add(id);
+					allFlags.push(flag);
+				});
+			const flagChips = allFlags
 				.map((flag) => {
 					const emoji = safeString(flag?.emoji ?? '');
 					const label = safeString(flag?.name ?? '');
@@ -3635,38 +4040,117 @@ const renderModal = (state, root, copy) => {
 				})
 				.join('');
 
+			const flagOptions = ensureArray(state.catalog.flags.items);
+			const selectedClientFlags = new Set(ensureArray(modal.clientFlags).map((id) => Number(id)));
+
+			let flagList = '';
+			if (state.catalog.flags.isLoading && !flagOptions.length) {
+				flagList = `<p class="bbgf-modal__loading">${escapeHtml(copy.modalLoading)}</p>`;
+			} else if (state.catalog.flags.error) {
+				flagList = `<p class="bbgf-modal__error">${escapeHtml(state.catalog.flags.error)}</p>`;
+			} else {
+				flagList =
+					flagOptions
+						.map((flag) => {
+							const id = Number(flag?.id);
+							if (!Number.isFinite(id)) {
+								return '';
+							}
+							const checked = selectedClientFlags.has(id) ? 'checked' : '';
+							const label = safeString(flag?.name ?? '');
+							const emoji = safeString(flag?.emoji ?? '');
+							const text = `${emoji ? `${emoji} ` : ''}${label}`;
+							return `<label class="bbgf-flag-option"><input type="checkbox" data-role="bbgf-client-flag" data-flag-id="${id}" ${checked} ${modal.readOnly ? 'disabled' : ''}>${escapeHtml(text)}</label>`;
+						})
+						.filter(Boolean)
+						.join('') || `<p class="bbgf-modal__loading">${escapeHtml(copy.modalNoPrevious)}</p>`;
+			}
+
+			const flagsSection = `
+				<section class="bbgf-modal-section bbgf-client-flags">
+					<div class="bbgf-modal-section__header">
+						<h3>${escapeHtml(strings.flags)}</h3>
+						<p class="bbgf-modal__hint">Persisted at the client level.</p>
+					</div>
+					<div class="bbgf-flag-grid">
+						${flagList}
+					</div>
+					${modal.readOnly ? '' : `<div class="bbgf-modal__actions"><button type="button" class="bbgf-button bbgf-button--primary" data-role="bbgf-client-flags-save" ${modal.isSaving ? 'disabled' : ''}>${escapeHtml(modal.isSaving ? copy.modalSaving : copy.modalSave)}</button></div>`}
+				</section>
+			`;
+
 			contentHtml = `
-				<ul class="bbgf-modal-history">
-					${historyItems || `<li>${escapeHtml(copy.modalNoHistory)}</li>`}
-				</ul>
+				<div class="bbgf-visit-tab">
+					<section class="bbgf-modal-section">
+						<ul class="bbgf-modal-history">
+							${historyItems || `<li>${escapeHtml(copy.modalNoHistory)}</li>`}
+						</ul>
+					</section>
+					${flagsSection}
+				</div>
 			`;
 		} else if (modal.activeTab === 'history') {
-			const previousItems = ensureArray(visit.previous_visits)
-				.map((entry) => {
-					const when = formatDateTime(entry.check_in_at || entry.created_at);
-					const stage = escapeHtml(entry.stage ?? '');
+			const historyState = modal.history || {};
+			const historyItems = ensureArray(historyState.items)
+				.map((entry, index) => {
+					const when = formatDateTime(entry.check_in_at || entry.created_at || entry.check_out_at) || copy.modalHistory;
+					const stage = escapeHtml(entry.stage_label || entry.stage || '');
 					const instructions = escapeHtml(entry.instructions ?? '').replace(/\n/g, '<br>');
 					const publicNotes = escapeHtml(entry.public_notes ?? '').replace(/\n/g, '<br>');
 					const privateNotes = escapeHtml(entry.private_notes ?? '').replace(/\n/g, '<br>');
+					const servicesSummary = buildServiceSummary(entry.services);
+					const photos = ensureArray(entry.photos)
+						.slice(0, 6)
+						.map((photo) => {
+							const url = safeString(photo?.thumbnail?.url || photo?.url || '');
+							if (!url) {
+								return '';
+							}
+							return `<img src="${escapeHtml(url)}" alt="${escapeHtml(photo.alt ?? clientName)}">`;
+						})
+						.filter(Boolean)
+						.join('');
+					const targetId = `bbgf-history-${entry.id || index}`;
+					const isFirst = index === 0;
 
 					return `
-						<li>
-							<div class="bbgf-history-entry">
-								<strong>${when || copy.modalHistory}</strong>
-								${stage ? `<p>${stage}</p>` : ''}
-								${instructions ? `<p class="bbgf-history-duration">${instructions}</p>` : ''}
-								${publicNotes ? `<p>${publicNotes}</p>` : ''}
-								${privateNotes ? `<p><em>${privateNotes}</em></p>` : ''}
+						<article class="bbgf-history-item${isFirst ? ' is-open' : ''}">
+							<button type="button" class="bbgf-history-toggle" data-role="bbgf-history-toggle" data-target="${targetId}" aria-expanded="${isFirst ? 'true' : 'false'}">
+								<span class="bbgf-history-title">${escapeHtml(when)}</span>
+								${stage ? `<span class="bbgf-history-stage">${stage}</span>` : ''}
+							</button>
+							<div class="bbgf-history-panel"${isFirst ? '' : ' hidden'} id="${targetId}">
+								${servicesSummary ? `<p class="bbgf-history-services"><strong>${escapeHtml(strings.services)}:</strong> ${escapeHtml(servicesSummary)}</p>` : ''}
+								${instructions ? `<p class="bbgf-history-note"><strong>Instructions:</strong> ${instructions}</p>` : ''}
+								${publicNotes ? `<p class="bbgf-history-note"><strong>Public:</strong> ${publicNotes}</p>` : ''}
+								${privateNotes ? `<p class="bbgf-history-note"><strong>Private:</strong> ${privateNotes}</p>` : ''}
+								${photos ? `<div class="bbgf-history-photos">${photos}</div>` : ''}
 							</div>
-						</li>
+						</article>
 					`;
 				})
 				.join('');
 
+			const historyFooter =
+				historyState.hasMore && !historyState.loading
+					? `<div class="bbgf-history-actions"><button type="button" class="bbgf-button bbgf-button--ghost" data-role="bbgf-history-load-more">Load more</button></div>`
+					: '';
+			const historyStatus = historyState.loading
+				? `<p class="bbgf-modal__loading">${escapeHtml(copy.modalLoading)}</p>`
+				: '';
+			const hasHistoryItems = Boolean(historyItems);
+			const historyContent = historyState.error
+				? `<p class="bbgf-modal__error">${escapeHtml(historyState.error)}</p>`
+				: historyState.loading && !hasHistoryItems
+					? `<p class="bbgf-modal__loading">${escapeHtml(copy.modalLoading)}</p>`
+					: historyItems || `<p class="bbgf-modal__loading">${escapeHtml(copy.modalNoPrevious)}</p>`;
+
 			contentHtml = `
-				<ul class="bbgf-modal-history">
-					${previousItems || `<li>${escapeHtml(copy.modalNoPrevious)}</li>`}
-				</ul>
+				<div class="bbgf-history-accordion">
+					${historyContent}
+				</div>
+				${historyStatus && hasHistoryItems ? historyStatus : ''}
+				${historyFooter}
 			`;
 		} else if (modal.activeTab === 'photos') {
 			const photos = ensureArray(visit.photos);

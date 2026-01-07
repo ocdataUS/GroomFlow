@@ -23,6 +23,7 @@ All endpoints require HTTPS, WordPress nonce authentication (for logged-in users
 | Method | Endpoint | Notes |
 | --- | --- | --- |
 | `GET/POST/PATCH` | `/clients`, `/clients/{id}` | Manage client profiles. `GET` supports search filters (name, breed) and pagination. |
+| `GET` | `/clients/{id}/history` | Paginated visit history for a client (services, notes, photos, stage labels). Supports `exclude_visit` to omit the active visit. |
 | `GET/POST/PATCH` | `/guardians`, `/guardians/{id}` | Manage guardian contacts. |
 | `GET/POST/PATCH/DELETE` | `/services`, `/services/{id}` | Manage service catalog (icon, color, duration, price). |
 | `GET/POST/PATCH/DELETE` | `/packages`, `/packages/{id}` | Manage service packages and their items. |
@@ -36,6 +37,7 @@ All endpoints require HTTPS, WordPress nonce authentication (for logged-in users
 
 - `search` — fuzzy match against client name and breed fields.
 - `page` / `per_page` — pagination controls (1–100 per page, default 20).
+- Responses include persisted `flags` (array of flag IDs) and `main_photo_id` within the `meta` payload.
 
 `GET /guardians` accepts:
 
@@ -119,6 +121,7 @@ Visit payloads include:
   - `url` — full-size image URL.
   - `mime_type` — attachment mime type.
   - `thumbnail` — optional array with `url`, `width`, `height` when a thumbnail rendition exists.
+- `client` — includes persisted `flags` (alert chips) and an optional `main_photo` that acts as the default avatar across future visits.
 - `history[]` — present when the request includes `include_history` (e.g., `GET /visits/{id}` and stage-move responses). Entries expose `id`, `from_stage`/`to_stage` objects (with `key` + `label`), `comment`, `changed_by`, `changed_by_name`, `changed_at`, and `elapsed_seconds`.
 - `timer_elapsed_seconds` — live timer derived from the stored elapsed value plus the active stage runtime.
 

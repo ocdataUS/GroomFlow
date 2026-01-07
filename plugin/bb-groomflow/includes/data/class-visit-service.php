@@ -16,6 +16,7 @@ use wpdb;
  * Encapsulates visit CRUD, stage transitions, board payloads, and media helpers.
  */
 class Visit_Service {
+	// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	/**
 	 * Meta key linking attachment IDs to visits.
 	 */
@@ -38,6 +39,12 @@ class Visit_Service {
 	 */
 	private const DEFAULT_BOARD_CACHE_TTL    = 5;
 	private const DEFAULT_METADATA_CACHE_TTL = 120;
+
+	/**
+	 * Client-level meta keys we care about.
+	 */
+	private const CLIENT_META_FLAGS      = 'flags';
+	private const CLIENT_META_MAIN_PHOTO = 'main_photo_id';
 
 	/**
 	 * Plugin reference.
@@ -72,13 +79,32 @@ class Visit_Service {
 	}
 
 	/**
+	 * Decode a JSON meta blob safely.
+	 *
+	 * @param string|null $raw_meta Raw meta value from the database.
+	 * @return array<string,mixed>
+	 */
+	private function decode_meta_value( ?string $raw_meta ): array {
+		if ( null === $raw_meta || '' === $raw_meta ) {
+			return array();
+		}
+
+		$decoded = json_decode( $raw_meta, true );
+		if ( null === $decoded || JSON_ERROR_NONE !== json_last_error() || ! is_array( $decoded ) ) {
+			return array();
+		}
+
+		return $decoded;
+	}
+
+	/**
 	 * Retrieve a view by slug.
 	 *
 	 * @param string $slug View slug.
 	 * @return array<string,mixed>|null
 	 */
 	public function get_view_by_slug( string $slug ): ?array {
-		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PEAR.Functions.FunctionCallSignature,Generic.WhiteSpace.ScopeIndent,WordPress.Arrays.MultipleStatementAlignment.AssignmentNotAligned
 		$row = $this->wpdb->get_row(
 			$this->wpdb->prepare(
 				"SELECT * FROM {$this->tables['views']} WHERE slug = %s",
@@ -128,11 +154,13 @@ class Visit_Service {
 			return array();
 		}
 
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$table = $this->tables['views'];
 		$sql   = "SELECT id, name, slug, type, allow_switcher, show_guardian, refresh_interval FROM {$table} ORDER BY name ASC";
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		if ( empty( $rows ) ) {
 			return array();
@@ -261,7 +289,7 @@ class Visit_Service {
 		}
 
 		$sql      = "SELECT v.id, v.client_id, v.guardian_id, v.view_id, v.current_stage, v.status, v.check_in_at, v.check_out_at, v.assigned_staff, v.instructions, v.private_notes, v.public_notes, v.timer_started_at, v.timer_elapsed_seconds, v.created_at, v.updated_at,
-			c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight,
+			c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight, c.meta AS client_meta,
 			g.first_name AS guardian_first_name, g.last_name AS guardian_last_name, g.phone_mobile AS guardian_phone, g.email AS guardian_email
 			FROM {$this->tables['visits']} AS v
 			LEFT JOIN {$this->tables['clients']} AS c ON c.id = v.client_id
@@ -277,11 +305,13 @@ class Visit_Service {
 
 		$sql .= ' ORDER BY COALESCE(v.check_in_at, v.created_at, v.updated_at) ASC, v.id ASC';
 
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnsupportedPlaceholder
 		$prepared_sql = $this->wpdb->prepare(
-			$sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names and dynamic placeholders are controlled internally; values prepared via wpdb.
+			$sql,
 			...$args_sql
 		);
-		$visits       = $this->wpdb->get_results( $prepared_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$visits       = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnsupportedPlaceholder
 
 		$visit_ids = array_map(
 			static function ( $row ) {
@@ -289,6 +319,24 @@ class Visit_Service {
 			},
 			$visits
 		);
+
+			$client_ids      = array_map(
+				static function ( $row ) {
+					return (int) ( $row['client_id'] ?? 0 );
+				},
+				$visits
+			);
+			$client_meta_map = $this->get_clients_meta_map( $client_ids );
+			$client_flag_ids = array();
+		foreach ( $client_meta_map as $meta ) {
+			foreach ( $meta[ self::CLIENT_META_FLAGS ] ?? array() as $flag_id ) {
+				$flag_id = (int) $flag_id;
+				if ( $flag_id > 0 ) {
+					$client_flag_ids[ $flag_id ] = $flag_id;
+				}
+			}
+		}
+		$client_flags_lookup = $this->get_flags_by_ids( array_values( $client_flag_ids ) );
 
 		$services_map   = $this->get_visit_services_map( $visit_ids );
 		$flags_map      = $this->get_visit_flags_map( $visit_ids );
@@ -314,6 +362,8 @@ class Visit_Service {
 					'mask_guardian'        => $mask_guardian,
 					'mask_sensitive'       => $mask_sensitive_fields,
 					'hide_sensitive_flags' => $mask_sensitive_fields,
+					'client_meta'          => $client_meta_map[ (int) ( $visit['client_id'] ?? 0 ) ] ?? array(),
+					'flag_lookup'          => $client_flags_lookup,
 				),
 				array(),
 				$history_totals
@@ -514,6 +564,10 @@ class Visit_Service {
 			);
 		}
 
+		$client_meta_map            = $this->get_clients_meta_map( array( (int) ( $row['client_id'] ?? 0 ) ) );
+		$client_meta                = $client_meta_map[ (int) ( $row['client_id'] ?? 0 ) ] ?? array();
+		$client_flags               = array_map( 'intval', $client_meta[ self::CLIENT_META_FLAGS ] ?? array() );
+		$flag_lookup                = $this->get_flags_by_ids( $client_flags );
 		$options['include_history'] = $include_history;
 
 		return $this->format_visit_payload(
@@ -524,7 +578,9 @@ class Visit_Service {
 			$options,
 			$history,
 			$totals,
-			$previous_visits
+			$previous_visits,
+			$client_meta,
+			$flag_lookup
 		);
 	}
 
@@ -629,6 +685,99 @@ class Visit_Service {
 		}
 
 		return $previous;
+	}
+
+	/**
+	 * Fetch paginated visit history for a client.
+	 *
+	 * @param int $client_id     Client ID.
+	 * @param int $exclude_visit Visit ID to exclude (typically the active one).
+	 * @param int $page          Page number.
+	 * @param int $per_page      Items per page.
+	 * @return array<string,mixed>
+	 */
+	public function get_client_history( int $client_id, int $exclude_visit = 0, int $page = 1, int $per_page = 5 ): array {
+		$wpdb = $this->wpdb;
+
+		$client_id     = (int) $client_id;
+		$exclude_visit = (int) $exclude_visit;
+		$page          = max( 1, (int) $page );
+		$per_page      = max( 1, min( 20, (int) $per_page ) );
+		$offset        = ( $page - 1 ) * $per_page;
+		$limit_plus    = $per_page + 1; // fetch one extra to signal has_more.
+
+		if ( $client_id <= 0 ) {
+			return array(
+				'items'    => array(),
+				'page'     => $page,
+				'per_page' => $per_page,
+				'has_more' => false,
+			);
+		}
+
+		$visits_table = esc_sql( $this->tables['visits'] );
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name sourced from trusted schema map.
+				"SELECT id, current_stage, status, check_in_at, check_out_at, instructions, public_notes, private_notes, created_at
+				FROM {$visits_table}
+				WHERE client_id = %d AND id <> %d
+				ORDER BY check_in_at DESC, created_at DESC
+				LIMIT %d OFFSET %d",
+				$client_id,
+				$exclude_visit,
+				$limit_plus,
+				$offset
+			),
+			ARRAY_A
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+
+		$has_more = count( $rows ) > $per_page;
+		if ( $has_more ) {
+			$rows = array_slice( $rows, 0, $per_page );
+		}
+
+		$visit_ids    = array_map(
+			static function ( $row ) {
+				return (int) ( $row['id'] ?? 0 );
+			},
+			$rows
+		);
+		$services_map = $this->get_visit_services_map( $visit_ids );
+		$photos_map   = $this->get_visit_photos_map( $visit_ids );
+		$flags_map    = $this->get_visit_flags_map( $visit_ids );
+		$library      = $this->get_stage_library();
+
+		$items = array();
+		foreach ( $rows as $row ) {
+			$visit_id   = (int) ( $row['id'] ?? 0 );
+			$stage_key  = sanitize_key( (string) ( $row['current_stage'] ?? '' ) );
+			$stage_data = $library[ $stage_key ] ?? null;
+			$items[]    = array(
+				'id'            => $visit_id,
+				'stage'         => $stage_key,
+				'stage_label'   => $stage_data['label'] ?? $stage_key,
+				'status'        => (string) ( $row['status'] ?? '' ),
+				'check_in_at'   => $this->maybe_rfc3339( $row['check_in_at'] ?? null ),
+				'check_out_at'  => $this->maybe_rfc3339( $row['check_out_at'] ?? null ),
+				'instructions'  => (string) ( $row['instructions'] ?? '' ),
+				'public_notes'  => (string) ( $row['public_notes'] ?? '' ),
+				'private_notes' => (string) ( $row['private_notes'] ?? '' ),
+				'services'      => $services_map[ $visit_id ] ?? array(),
+				'flags'         => $flags_map[ $visit_id ] ?? array(),
+				'photos'        => $photos_map[ $visit_id ] ?? array(),
+				'created_at'    => $this->maybe_rfc3339( $row['created_at'] ?? null ),
+			);
+		}
+
+		return array(
+			'items'    => $items,
+			'page'     => $page,
+			'per_page' => $per_page,
+			'has_more' => $has_more,
+		);
 	}
 
 	/**
@@ -1073,6 +1222,7 @@ class Visit_Service {
 
 		do_action( 'bbgf_visit_photo_added', $visit_id, $attachment_id, $photo );
 
+		$this->set_client_main_photo( (int) ( $visit['client_id'] ?? 0 ), $attachment_id );
 		$payload = $this->get_visit( $visit_id );
 		if ( null === $payload ) {
 			return new WP_Error(
@@ -1081,13 +1231,51 @@ class Visit_Service {
 				array( 'status' => 500 )
 			);
 		}
-
-		$this->flush_cache( isset( $visit['view_id'] ) ? (int) $visit['view_id'] : null );
+		$this->flush_cache();
 
 		return array(
 			'photo' => $photo,
 			'visit' => $payload,
 		);
+	}
+
+	/**
+	 * Persist the client's main photo reference.
+	 *
+	 * @param int $client_id     Client ID.
+	 * @param int $attachment_id Attachment/Photo ID.
+	 * @return void
+	 */
+	private function set_client_main_photo( int $client_id, int $attachment_id ): void {
+		if ( $client_id <= 0 || $attachment_id <= 0 ) {
+			return;
+		}
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$current = $this->wpdb->get_row(
+			$this->wpdb->prepare(
+				"SELECT meta FROM {$this->tables['clients']} WHERE id = %d",
+				$client_id
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$meta                                 = $this->decode_meta_value( $current['meta'] ?? null ); // phpcs:ignore WordPress.Arrays.MultipleStatementAlignment.AssignmentNotAligned,WordPress.Arrays.MultipleStatementAlignment.NotAligned
+		$meta[ self::CLIENT_META_MAIN_PHOTO ] = $attachment_id; // phpcs:ignore WordPress.Arrays.MultipleStatementAlignment.AssignmentNotAligned,WordPress.Arrays.MultipleStatementAlignment.NotAligned
+
+		$this->wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$this->tables['clients'],
+			array(
+				'meta'       => wp_json_encode( $meta ),
+				'updated_at' => $this->plugin->now(),
+			),
+			array( 'id' => $client_id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		$this->flush_cache();
 	}
 
 	/**
@@ -1292,6 +1480,7 @@ class Visit_Service {
 
 		$this->clear_primary_photo( $visit_id );
 		update_post_meta( $attachment_id, self::VISIT_PHOTO_PRIMARY_META_KEY, 1 );
+		$this->set_client_main_photo( (int) ( $visit['client_id'] ?? 0 ), $attachment_id );
 
 		$photo   = $this->format_photo_payload( $attachment_id );
 		$payload = $this->get_visit( $visit_id );
@@ -1304,7 +1493,7 @@ class Visit_Service {
 			);
 		}
 
-		$this->flush_cache( isset( $visit['view_id'] ) ? (int) $visit['view_id'] : null );
+		$this->flush_cache();
 
 		return array(
 			'photo' => $photo,
@@ -1509,52 +1698,59 @@ class Visit_Service {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function search_intake_entities( string $query, int $limit = 10 ): array {
+		$wpdb = $this->wpdb;
+
 		$query = trim( $query );
 		$limit = max( 1, min( 20, $limit ) );
 
-		$clients_table   = $this->tables['clients'];
-		$guardians_table = $this->tables['guardians'];
+		$clients_table   = esc_sql( $this->tables['clients'] );
+		$guardians_table = esc_sql( $this->tables['guardians'] );
 
-		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table names come from plugin schema map; values use prepared placeholders.
-		if ( '' !== $query ) {
+			if ( '' !== $query ) {
 			$like = '%' . $this->wpdb->esc_like( $query ) . '%';
 
-			$sql = $this->wpdb->prepare(
-				"
-				SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
-					g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
-				FROM {$clients_table} AS c
-				LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
-				WHERE (c.name LIKE %s OR c.breed LIKE %s OR c.notes LIKE %s OR g.first_name LIKE %s OR g.last_name LIKE %s OR g.email LIKE %s OR g.phone_mobile LIKE %s OR g.phone_alt LIKE %s)
-				ORDER BY c.name ASC
-				LIMIT %d
-				",
-				$like,
-				$like,
-				$like,
-				$like,
-				$like,
-				$like,
-				$like,
-				$like,
-				$limit
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$rows = $wpdb->get_results(
+			$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from plugin schema map.
+			"SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
+						g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
+					FROM {$clients_table} AS c
+					LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
+					WHERE (c.name LIKE %s OR c.breed LIKE %s OR c.notes LIKE %s OR g.first_name LIKE %s OR g.last_name LIKE %s OR g.email LIKE %s OR g.phone_mobile LIKE %s OR g.phone_alt LIKE %s)
+					ORDER BY c.name ASC
+					LIMIT %d",
+			$like,
+			$like,
+			$like,
+			$like,
+			$like,
+			$like,
+			$like,
+			$like,
+			$limit
+			),
+			ARRAY_A
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			} else {
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$rows = $wpdb->get_results(
+			$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from plugin schema map.
+			"SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
+						g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
+					FROM {$clients_table} AS c
+					LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
+					ORDER BY c.updated_at DESC, c.name ASC
+					LIMIT %d",
+			$limit
+			),
+			ARRAY_A
 			);
-		} else {
-			$sql = $this->wpdb->prepare(
-				"
-				SELECT c.id AS client_id, c.name AS client_name, c.breed, c.weight, c.temperament, c.guardian_id,
-					g.id AS guardian_id, g.first_name, g.last_name, g.email, g.phone_mobile, g.phone_alt, g.preferred_contact
-				FROM {$clients_table} AS c
-				LEFT JOIN {$guardians_table} AS g ON g.id = c.guardian_id
-				ORDER BY c.updated_at DESC, c.name ASC
-				LIMIT %d
-				",
-				$limit
-			);
-		}
-		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			}
 
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
 		if ( empty( $rows ) ) {
 			return array();
 		}
@@ -1597,18 +1793,32 @@ class Visit_Service {
 	 * @return true|WP_Error
 	 */
 	public function assert_ids_exist( string $table, array $ids, string $error ) {
+		$wpdb = $this->wpdb;
+
 		$ids = array_filter( array_map( 'intval', $ids ) );
 		if ( empty( $ids ) ) {
 			return true;
 		}
 
-		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
-		$prepared_sql = $this->wpdb->prepare(
-			"SELECT id FROM {$table} WHERE id IN ({$placeholders})", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Table name from plugin schema map; placeholder list built from sanitised IDs.
-			...$ids
+		$allowed_tables = array_values( $this->tables );
+		if ( ! in_array( $table, $allowed_tables, true ) ) {
+			return new WP_Error(
+				$error,
+				__( 'Invalid table reference.', 'bb-groomflow' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$table_name = esc_sql( $table );
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$found = array_map(
+			'intval',
+			$wpdb->get_col(
+				"SELECT id FROM {$table_name} WHERE id IN (" . implode( ',', $ids ) . ')'
+			)
 		);
-		$found        = array_map( 'intval', $this->wpdb->get_col( $prepared_sql ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$missing      = array_diff( $ids, $found );
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$missing = array_diff( $ids, $found );
 
 		if ( ! empty( $missing ) ) {
 			return new WP_Error(
@@ -1629,12 +1839,25 @@ class Visit_Service {
 	 * @return bool
 	 */
 	public function record_exists( string $table, int $id ): bool {
-		$prepared_sql = $this->wpdb->prepare(
-			"SELECT id FROM {$table} WHERE id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from plugin schema map.
-			$id
-		);
+		$wpdb = $this->wpdb;
 
-		return (int) $this->wpdb->get_var( $prepared_sql ) > 0; // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$allowed_tables = array_values( $this->tables );
+		if ( ! in_array( $table, $allowed_tables, true ) ) {
+			return false;
+		}
+
+		$table_name = esc_sql( $table );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$result = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id FROM {$table_name} WHERE id = %d",
+				$id
+			)
+		) > 0;
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+
+		return $result;
 	}
 
 	/**
@@ -1708,7 +1931,7 @@ class Visit_Service {
 
 		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$prepared_sql = $this->wpdb->prepare(
-			"SELECT v.*, c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight,
+			"SELECT v.*, c.name AS client_name, c.slug AS client_slug, c.breed AS client_breed, c.weight AS client_weight, c.meta AS client_meta,
 				g.first_name AS guardian_first_name, g.last_name AS guardian_last_name, g.phone_mobile AS guardian_phone, g.email AS guardian_email
 			FROM {$this->tables['visits']} AS v
 			LEFT JOIN {$this->tables['clients']} AS c ON c.id = v.client_id
@@ -1734,13 +1957,17 @@ class Visit_Service {
 	 * @param array<int,array<string,mixed>> $history         Stage history entries.
 	 * @param array<int,array<string,int>>   $history_totals  Stage elapsed totals keyed by visit ID then stage key.
 	 * @param array<int,array<string,mixed>> $previous_visits Prior visits for the client.
+	 * @param array<string,mixed>            $client_meta     Client meta map.
+	 * @param array<int,array<string,mixed>> $flag_lookup     Flag lookup keyed by ID.
 	 * @return array<string,mixed>
 	 */
-	private function format_visit_payload( array $visit_row, array $services, array $flags, array $photos = array(), array $options = array(), array $history = array(), array $history_totals = array(), array $previous_visits = array() ): array {
+	private function format_visit_payload( array $visit_row, array $services, array $flags, array $photos = array(), array $options = array(), array $history = array(), array $history_totals = array(), array $previous_visits = array(), array $client_meta = array(), array $flag_lookup = array() ): array {
 		$mask_guardian        = ! empty( $options['mask_guardian'] );
 		$mask_sensitive       = ! empty( $options['mask_sensitive'] );
 		$hide_sensitive_flags = ! empty( $options['hide_sensitive_flags'] );
 		$include_history      = ! empty( $options['include_history'] );
+		$client_meta          = is_array( $options['client_meta'] ?? $client_meta ) ? ( $options['client_meta'] ?? $client_meta ) : array();
+		$flag_lookup          = is_array( $options['flag_lookup'] ?? $flag_lookup ) ? ( $options['flag_lookup'] ?? $flag_lookup ) : array();
 
 		$guardian = array();
 		if ( ! $mask_guardian ) {
@@ -1806,6 +2033,8 @@ class Visit_Service {
 		$private_notes = (string) ( $visit_row['private_notes'] ?? '' );
 		$public_notes  = (string) ( $visit_row['public_notes'] ?? '' );
 		$assigned      = isset( $visit_row['assigned_staff'] ) ? (int) $visit_row['assigned_staff'] : null;
+		$client_flags  = $this->map_client_flags( $client_meta, $flag_lookup, $hide_sensitive_flags );
+		$client_photo  = $this->format_client_main_photo( $client_meta );
 
 		if ( $mask_sensitive ) {
 			$instructions  = '';
@@ -1818,14 +2047,17 @@ class Visit_Service {
 		$current_stage = (string) ( $visit_row['current_stage'] ?? '' );
 		$history_total = $history_totals[ $visit_id ][ $current_stage ] ?? 0;
 
+		// phpcs:disable WordPress.Arrays.MultipleStatementAlignment.DoubleArrowNotAligned,WordPress.Arrays.MultipleStatementAlignment.NotAligned
 		$payload = array(
 			'id'                    => (int) $visit_row['id'],
 			'client'                => array(
-				'id'     => (int) $visit_row['client_id'],
-				'name'   => (string) ( $visit_row['client_name'] ?? '' ),
-				'slug'   => (string) ( $visit_row['client_slug'] ?? '' ),
-				'breed'  => (string) ( $visit_row['client_breed'] ?? '' ),
-				'weight' => isset( $visit_row['client_weight'] ) ? (float) $visit_row['client_weight'] : null,
+				'id'         => (int) $visit_row['client_id'],
+				'name'       => (string) ( $visit_row['client_name'] ?? '' ),
+				'slug'       => (string) ( $visit_row['client_slug'] ?? '' ),
+				'breed'      => (string) ( $visit_row['client_breed'] ?? '' ),
+				'weight'     => isset( $visit_row['client_weight'] ) ? (float) $visit_row['client_weight'] : null,
+				'flags'      => $client_flags,
+				'main_photo' => $client_photo,
 			),
 			'guardian'              => $guardian,
 			'view_id'               => (int) ( $visit_row['view_id'] ?? 0 ),
@@ -1843,15 +2075,64 @@ class Visit_Service {
 			'flags'                 => $filtered_flags,
 			'photos'                => $normalised_photos,
 			'previous_visits'       => $previous_visits,
+			'history'               => $include_history ? $history : array(),
+			'history_total'         => $history_total,
 			'created_at'            => $this->maybe_rfc3339( $visit_row['created_at'] ?? null ),
 			'updated_at'            => $this->maybe_rfc3339( $visit_row['updated_at'] ?? null ),
 		);
-
-		if ( $include_history ) {
-			$payload['history'] = $history;
-		}
+		// phpcs:enable WordPress.Arrays.MultipleStatementAlignment.DoubleArrowNotAligned,WordPress.Arrays.MultipleStatementAlignment.NotAligned
 
 		return $payload;
+	}
+
+	/**
+	 * Map client-level flag IDs into full flag objects while respecting masking.
+	 *
+	 * @param array<string,mixed>            $client_meta  Client meta map.
+	 * @param array<int,array<string,mixed>> $flag_lookup  Flag lookup keyed by ID.
+	 * @param bool                           $hide_flagged Whether to hide sensitive flags.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function map_client_flags( array $client_meta, array $flag_lookup, bool $hide_flagged = false ): array {
+		$flags    = array();
+		$flag_ids = array_map( 'intval', $client_meta[ self::CLIENT_META_FLAGS ] ?? array() );
+
+		foreach ( $flag_ids as $flag_id ) {
+			if ( ! isset( $flag_lookup[ $flag_id ] ) ) {
+				continue;
+			}
+
+			$flag     = $flag_lookup[ $flag_id ];
+			$severity = isset( $flag['severity'] ) ? strtolower( (string) $flag['severity'] ) : '';
+			if ( $hide_flagged && in_array( $severity, array( 'high', 'critical', 'internal', 'private' ), true ) ) {
+				continue;
+			}
+
+			$flags[ $flag_id ] = array(
+				'id'       => (int) ( $flag['id'] ?? $flag_id ),
+				'name'     => (string) ( $flag['name'] ?? '' ),
+				'emoji'    => (string) ( $flag['emoji'] ?? '' ),
+				'color'    => (string) ( $flag['color'] ?? '' ),
+				'severity' => $severity,
+			);
+		}
+
+		return array_values( $flags );
+	}
+
+	/**
+	 * Format the client main photo attachment (if any).
+	 *
+	 * @param array<string,mixed> $client_meta Client meta map.
+	 * @return array<string,mixed>|null
+	 */
+	private function format_client_main_photo( array $client_meta ): ?array {
+		$photo_id = isset( $client_meta[ self::CLIENT_META_MAIN_PHOTO ] ) ? (int) $client_meta[ self::CLIENT_META_MAIN_PHOTO ] : 0;
+		if ( $photo_id <= 0 ) {
+			return null;
+		}
+
+		return $this->format_photo_payload( $photo_id );
 	}
 
 	/**
@@ -1939,6 +2220,109 @@ class Visit_Service {
 				'emoji'    => (string) ( $row['emoji'] ?? '' ),
 				'color'    => (string) ( $row['color'] ?? '' ),
 				'severity' => (string) ( $row['severity'] ?? '' ),
+			);
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Fetch flag definitions keyed by ID.
+	 *
+	 * @param array<int> $flag_ids Flag IDs.
+	 * @return array<int,array<string,string>>
+	 */
+	private function get_flags_by_ids( array $flag_ids ): array {
+		$flag_ids = array_filter( array_map( 'intval', $flag_ids ) );
+		if ( empty( $flag_ids ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $flag_ids ), '%d' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT id, name, emoji, color, severity
+			FROM {$this->tables['flags']}
+			WHERE id IN ({$placeholders})",
+			...$flag_ids
+		);
+		$rows         = $this->wpdb->get_results( $prepared_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+		$lookup = array();
+		foreach ( $rows as $row ) {
+			$id = (int) ( $row['id'] ?? 0 );
+			if ( $id <= 0 ) {
+				continue;
+			}
+
+			$lookup[ $id ] = array(
+				'id'       => $id,
+				'name'     => (string) ( $row['name'] ?? '' ),
+				'emoji'    => (string) ( $row['emoji'] ?? '' ),
+				'color'    => (string) ( $row['color'] ?? '' ),
+				'severity' => (string) ( $row['severity'] ?? '' ),
+			);
+		}
+
+		return $lookup;
+	}
+
+	/**
+	 * Retrieve and decode meta for a set of clients.
+	 *
+	 * @param array<int> $client_ids Client IDs.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_clients_meta_map( array $client_ids ): array {
+		$client_ids = array_filter( array_map( 'intval', $client_ids ) );
+		if ( empty( $client_ids ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $client_ids ), '%d' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$prepared_sql = $this->wpdb->prepare(
+			"SELECT id, meta FROM {$this->tables['clients']} WHERE id IN ({$placeholders})",
+			...$client_ids
+		);
+		$rows         = $this->wpdb->get_results( $prepared_sql, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+		$map = array();
+		foreach ( $rows as $row ) {
+			$id = (int) ( $row['id'] ?? 0 );
+			if ( $id <= 0 ) {
+				continue;
+			}
+
+			$meta        = $this->decode_meta_value( $row['meta'] ?? null );
+			$flag_ids    = array();
+			$main_photo  = null;
+			$maybe_flags = $meta[ self::CLIENT_META_FLAGS ] ?? array();
+			$maybe_photo = $meta[ self::CLIENT_META_MAIN_PHOTO ] ?? null;
+
+			if ( is_array( $maybe_flags ) ) {
+				$flag_ids = array_filter(
+					array_map(
+						static function ( $flag_id ) {
+							return (int) $flag_id;
+						},
+						$maybe_flags
+					)
+				);
+			}
+
+			if ( ! empty( $maybe_photo ) ) {
+				$main_photo = (int) $maybe_photo;
+			}
+
+			$map[ $id ] = array(
+				self::CLIENT_META_FLAGS      => $flag_ids,
+				self::CLIENT_META_MAIN_PHOTO => $main_photo,
+				'raw'                        => $meta,
 			);
 		}
 
@@ -2223,16 +2607,18 @@ class Visit_Service {
 			return null;
 		}
 
-		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$prepared_sql = $this->wpdb->prepare(
-			"SELECT id, visit_id, from_stage, to_stage, comment, changed_by, changed_at, elapsed_seconds
-			FROM {$this->tables['stage_history']}
-			WHERE id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name sourced from plugin schema map.
-			$history_id
+		$table = esc_sql( $this->tables['stage_history'] );
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$row = $this->wpdb->get_row(
+			$this->wpdb->prepare(
+				"SELECT id, visit_id, from_stage, to_stage, comment, changed_by, changed_at, elapsed_seconds
+				FROM {$table}
+				WHERE id = %d",
+				$history_id
+			),
+			ARRAY_A
 		);
-
-		$row = $this->wpdb->get_row( $prepared_sql, ARRAY_A );
-		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		if ( ! is_array( $row ) ) {
 			return null;
 		}
@@ -2286,6 +2672,8 @@ class Visit_Service {
 	 * @return array<string,array<string,mixed>>
 	 */
 	private function get_stage_library(): array {
+		$wpdb = $this->wpdb;
+
 		$cache_ttl = $this->get_cache_ttl( 'metadata' );
 		$cache_key = 'stage_library';
 
@@ -2296,10 +2684,19 @@ class Visit_Service {
 			}
 		}
 
-		$sql  = "SELECT stage_key, label, description, capacity_soft_limit, capacity_hard_limit, timer_threshold_green, timer_threshold_yellow, timer_threshold_red, sort_order
-			FROM {$this->tables['stages']}
-			ORDER BY sort_order ASC"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from plugin schema map.
-		$rows = $this->wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Static lookup query without external input.
+		$stages_table = esc_sql( $this->tables['stages'] );
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT stage_key, label, description, capacity_soft_limit, capacity_hard_limit, timer_threshold_green, timer_threshold_yellow, timer_threshold_red, sort_order
+				FROM {$stages_table}
+				WHERE 1 = %d
+				ORDER BY sort_order ASC",
+				1
+			),
+			ARRAY_A
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 
 		$library = array();
 		foreach ( $rows as $row ) {
@@ -2489,9 +2886,12 @@ class Visit_Service {
 			return '';
 		}
 
-		$sql        = "SELECT MAX(updated_at) FROM {$this->tables['visits']} WHERE view_id = %d AND check_out_at IS NULL AND (status IS NULL OR status <> %s)";
-		$sql_args   = array( $view_id, 'completed' );
-		$stage_keys = array();
+		$wpdb = $this->wpdb;
+
+		$visits_table = esc_sql( $this->tables['visits'] );
+		$sql_args     = array( $view_id, 'completed' );
+		$stage_keys   = array();
+		$stage_clause = '';
 
 		if ( ! empty( $stage_filter_list ) ) {
 			$stage_keys   = array_values(
@@ -2505,16 +2905,18 @@ class Visit_Service {
 				)
 			);
 			$placeholders = implode( ',', array_fill( 0, count( $stage_keys ), '%s' ) );
-			$sql         .= " AND current_stage IN ({$placeholders})";
+			$stage_clause = " AND current_stage IN ({$placeholders})";
 			$sql_args     = array_merge( $sql_args, $stage_keys );
 		}
 
-		$prepared_sql = $this->wpdb->prepare(
-			$sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names/filters are internal; values prepared via wpdb.
-			...$sql_args
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$latest = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT MAX(updated_at) FROM {$visits_table} WHERE view_id = %d AND check_out_at IS NULL AND (status IS NULL OR status <> %s){$stage_clause}",
+				$sql_args
+			)
 		);
-
-		$latest = $this->wpdb->get_var( $prepared_sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 
 		return is_string( $latest ) ? $latest : '';
 	}
@@ -2717,4 +3119,6 @@ class Visit_Service {
 			require_once ABSPATH . 'wp-admin/includes/media.php';
 		}
 	}
+
+	// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 }

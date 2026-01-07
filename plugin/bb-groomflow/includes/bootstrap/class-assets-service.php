@@ -321,6 +321,8 @@ class Assets_Service {
 				'visits'       => esc_url_raw( rest_url( 'bb-groomflow/v1/visits' ) ),
 				'intakeSearch' => esc_url_raw( rest_url( 'bb-groomflow/v1/visits/intake-search' ) ),
 				'services'     => esc_url_raw( rest_url( 'bb-groomflow/v1/services' ) ),
+				'clients'      => esc_url_raw( rest_url( 'bb-groomflow/v1/clients' ) ),
+				'flags'        => esc_url_raw( rest_url( 'bb-groomflow/v1/flags' ) ),
 			),
 		);
 

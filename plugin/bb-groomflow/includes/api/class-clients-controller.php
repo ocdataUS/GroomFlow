@@ -132,6 +132,38 @@ class Clients_Controller extends REST_Controller {
 				'schema' => array( $this, 'get_public_item_schema' ),
 			)
 		);
+
+		register_rest_route(
+			$this->namespace,
+			sprintf( '/%s/(?P<id>\d+)/history', $this->rest_base ),
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_history' ),
+					'permission_callback' => array( $this, 'get_item_permissions_check' ),
+					'args'                => array(
+						'page'          => array(
+							'type'        => 'integer',
+							'default'     => 1,
+							'minimum'     => 1,
+							'description' => __( 'History page to fetch.', 'bb-groomflow' ),
+						),
+						'per_page'      => array(
+							'type'        => 'integer',
+							'default'     => 5,
+							'minimum'     => 1,
+							'maximum'     => 20,
+							'description' => __( 'Number of history records to return.', 'bb-groomflow' ),
+						),
+						'exclude_visit' => array(
+							'type'        => 'integer',
+							'default'     => 0,
+							'description' => __( 'Visit ID to exclude from history results.', 'bb-groomflow' ),
+						),
+					),
+				),
+			)
+		);
 	}
 
 	/**
@@ -152,6 +184,33 @@ class Clients_Controller extends REST_Controller {
 	 */
 	public function get_item_permissions_check( $request ) {
 		return $this->check_capability( 'bbgf_edit_visits' );
+	}
+
+	/**
+	 * Retrieve client visit history with pagination.
+	 *
+	 * @param WP_REST_Request $request Request instance.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_history( $request ) {
+		$client_id = (int) $request->get_param( 'id' );
+		$page      = max( 1, (int) $request->get_param( 'page' ) );
+		$per_page  = (int) $request->get_param( 'per_page' );
+		$per_page  = max( 1, min( 20, $per_page ) );
+		$exclude   = max( 0, (int) $request->get_param( 'exclude_visit' ) );
+
+		$client = $this->get_client( $client_id );
+		if ( null === $client ) {
+			return new WP_Error(
+				'bbgf_client_not_found',
+				__( 'Client not found.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$history = $this->plugin->visit_service()->get_client_history( $client_id, $exclude, $page, $per_page );
+
+		return rest_ensure_response( $history );
 	}
 
 	/**
@@ -360,9 +419,20 @@ class Clients_Controller extends REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function prepare_item_for_response( $item, $request ): WP_REST_Response {
-		$guardian_id = isset( $item['guardian_id'] ) ? (int) $item['guardian_id'] : 0;
-		$weight      = isset( $item['weight'] ) ? $item['weight'] : null;
-		$dob         = isset( $item['dob'] ) ? trim( (string) $item['dob'] ) : '';
+		$guardian_id   = isset( $item['guardian_id'] ) ? (int) $item['guardian_id'] : 0;
+		$weight        = isset( $item['weight'] ) ? $item['weight'] : null;
+		$dob           = isset( $item['dob'] ) ? trim( (string) $item['dob'] ) : '';
+		$meta          = $this->decode_meta( $item['meta'] ?? null );
+		$flags         = array_filter(
+			array_map(
+				'intval',
+				is_array( $meta['flags'] ?? null ) ? $meta['flags'] : array()
+			)
+		);
+		$main_photo_id = isset( $meta['main_photo_id'] ) ? (int) $meta['main_photo_id'] : null;
+		if ( $main_photo_id <= 0 ) {
+			$main_photo_id = null;
+		}
 
 		$data = array(
 			'id'                => (int) $item['id'],
@@ -376,7 +446,9 @@ class Clients_Controller extends REST_Controller {
 			'temperament'       => $item['temperament'],
 			'preferred_groomer' => $item['preferred_groomer'],
 			'notes'             => $item['notes'],
-			'meta'              => $this->decode_meta( $item['meta'] ?? null ),
+			'flags'             => $flags,
+			'main_photo_id'     => $main_photo_id,
+			'meta'              => $meta,
 			'created_at'        => isset( $item['created_at'] ) ? mysql_to_rfc3339( $item['created_at'] ) : null,
 			'updated_at'        => isset( $item['updated_at'] ) ? mysql_to_rfc3339( $item['updated_at'] ) : null,
 		);
@@ -450,6 +522,18 @@ class Clients_Controller extends REST_Controller {
 				'notes'             => array(
 					'type'    => 'string',
 					'context' => array( 'view', 'edit' ),
+				),
+				'flags'             => array(
+					'type'    => 'array',
+					'context' => array( 'view', 'edit' ),
+					'items'   => array(
+						'type' => 'integer',
+					),
+				),
+				'main_photo_id'     => array(
+					'type'        => array( 'integer', 'null' ),
+					'context'     => array( 'view', 'edit' ),
+					'description' => __( 'Attachment ID of the client main photo.', 'bb-groomflow' ),
 				),
 				'meta'              => array(
 					'type'                 => 'object',
@@ -552,8 +636,16 @@ class Clients_Controller extends REST_Controller {
 			$weight = round( (float) $weight_param, 2 );
 		}
 
+		$current_meta = array();
+		if ( $client_id > 0 ) {
+			$current_row = $this->get_client( $client_id );
+			if ( $current_row ) {
+				$current_meta = $this->decode_meta( $current_row['meta'] ?? null );
+			}
+		}
+
 		$meta_param = $request->get_param( 'meta' );
-		$meta       = null;
+		$meta       = $current_meta;
 		if ( is_array( $meta_param ) ) {
 			$meta = $meta_param;
 		} elseif ( is_string( $meta_param ) && '' !== trim( $meta_param ) ) {
@@ -561,6 +653,24 @@ class Clients_Controller extends REST_Controller {
 			if ( null !== $decoded && JSON_ERROR_NONE === json_last_error() && is_array( $decoded ) ) {
 				$meta = $decoded;
 			}
+		}
+
+		$flags_param = $request->get_param( 'flags' );
+		if ( is_array( $flags_param ) ) {
+			$meta['flags'] = array_values(
+				array_filter(
+					array_map(
+						'intval',
+						$flags_param
+					)
+				)
+			);
+		}
+
+		$main_photo_param = $request->get_param( 'main_photo_id' );
+		if ( null !== $main_photo_param && '' !== $main_photo_param ) {
+			$main_photo_id         = (int) $main_photo_param;
+			$meta['main_photo_id'] = $main_photo_id > 0 ? $main_photo_id : null;
 		}
 
 		return array(
@@ -573,7 +683,7 @@ class Clients_Controller extends REST_Controller {
 			'temperament'       => sanitize_text_field( (string) $request->get_param( 'temperament' ) ),
 			'preferred_groomer' => sanitize_text_field( (string) $request->get_param( 'preferred_groomer' ) ),
 			'notes'             => sanitize_textarea_field( (string) $request->get_param( 'notes' ) ),
-			'meta'              => null !== $meta ? wp_json_encode( $meta ) : null,
+			'meta'              => wp_json_encode( $meta ),
 		);
 	}
 
