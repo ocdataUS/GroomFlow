@@ -21,7 +21,7 @@ asana_json() {
 
 	local raw
 	raw="$("$@" 2>/dev/null || true)"
-	raw="$(printf '%s\n' "${raw}" | sed -n '/^[[:space:]]*[\[{]/{:a;p;n;ba}')"
+	raw="$(printf '%s\n' "${raw}" | sed -n '/^[[:space:]]*[\[{][[:space:]]*$/,$p')"
 
 	if [[ -z "${raw}" ]] || ! jq -e . >/dev/null 2>&1 <<<"${raw}"; then
 		printf '%s' "${fallback}"
