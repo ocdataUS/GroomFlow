@@ -8,6 +8,7 @@
 namespace BBGF;
 
 use BBGF\Admin\Flags_Admin;
+use BBGF\Admin\Manage_Visits_Admin;
 use BBGF\Admin\Clients_Admin;
 use BBGF\Admin\Guardians_Admin;
 use BBGF\Admin\Services_Admin;
@@ -31,6 +32,8 @@ require_once BBGF_PLUGIN_DIR . 'includes/database/class-schema.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-admin-page-interface.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-flags-admin.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-flags-list-table.php';
+require_once BBGF_PLUGIN_DIR . 'includes/admin/class-manage-visits-admin.php';
+require_once BBGF_PLUGIN_DIR . 'includes/admin/class-manage-visits-list-table.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-clients-admin.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-clients-list-table.php';
 require_once BBGF_PLUGIN_DIR . 'includes/admin/class-guardians-admin.php';
@@ -128,6 +131,12 @@ final class Plugin {
 	 * @var Flags_Admin
 	 */
 	private Flags_Admin $flags_admin;
+	/**
+	 * Manage Visits admin handler.
+	 *
+	 * @var Manage_Visits_Admin
+	 */
+	private Manage_Visits_Admin $manage_visits_admin;
 	/**
 	 * Clients admin handler.
 	 *
@@ -239,6 +248,7 @@ final class Plugin {
 		add_action( 'init', array( $this, 'maybe_upgrade_database' ), 5 );
 
 		$this->flags_admin                 = new Flags_Admin( $this );
+		$this->manage_visits_admin         = new Manage_Visits_Admin( $this );
 		$this->clients_admin               = new Clients_Admin( $this );
 		$this->guardians_admin             = new Guardians_Admin( $this );
 		$this->services_admin              = new Services_Admin( $this );
@@ -256,6 +266,7 @@ final class Plugin {
 		$this->rest_service                = new Rest_Service( $this );
 
 		$this->flags_admin->register();
+		$this->manage_visits_admin->register();
 		$this->clients_admin->register();
 		$this->guardians_admin->register();
 		$this->services_admin->register();

@@ -108,6 +108,7 @@ run_wp wp eval "${BOARD_SCRIPT}" | tee -a "${LOG_PATH}"
 read -r -d '' MOVE_SCRIPT <<'PHP' || true
 $user = get_user_by( 'login', 'codexadmin' );
 wp_set_current_user( $user ? $user->ID : 1 );
+add_filter( 'pre_wp_mail', '__return_true' );
 
 $plugin  = bbgf();
 $service = $plugin->visit_service();

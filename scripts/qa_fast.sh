@@ -23,7 +23,12 @@ if [[ "${LINT_CHANGED:-0}" == "1" ]]; then
 	mapfile -t php_files < <(git -C "${ROOT_DIR}" diff --name-only --diff-filter=ACMRTUXB | rg '\.php$' || true)
 else
 	log "Linting plugin PHP files."
-	mapfile -t php_files < <(rg --files --absolute-path -g '*.php' "${TARGET_DIR}")
+	mapfile -t php_files < <(
+		cd "${TARGET_DIR}"
+		rg --files -g '*.php' | while IFS= read -r php_file; do
+			printf '%s/%s\n' "${TARGET_DIR}" "${php_file}"
+		done
+	)
 fi
 
 if [[ ${#php_files[@]} -eq 0 ]]; then

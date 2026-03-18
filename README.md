@@ -13,7 +13,7 @@ WordPress plugin + docs for the GroomFlow operations platform. Start with `AGENT
 - **Frontend board:** Shortcode `[bbgf_board]` renders interactive or lobby boards; JS bundle polls REST and drives modal/edit flows.
 - **CLI:** `wp bbgf ...` commands for seeding demo data, listing visits, sync scaffolds.
 - **Notifications & reporting:** Stage-triggered email delivery hooks and reporting endpoints for dashboards/exports.
-- **QA & release:** Manual ZIP packaging, Docker WP installs, `qa-phpcs plugin/bb-groomflow`, and full admin happy-path before handoff.
+- **QA & release:** Manual ZIP packaging, Docker WP installs, `bash scripts/qa_fast.sh`, `scripts/qa-phpcs plugin/bb-groomflow`, and full admin happy-path before handoff.
 
 ## Where Things Live
 - Plugin entry: `plugin/bb-groomflow/bb-groomflow.php`, `includes/class-plugin.php`

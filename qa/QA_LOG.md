@@ -2,6 +2,15 @@
 
 | Date | Agent | Slice | Scenario / Command | Artifacts | Result |
 | --- | --- | --- | --- | --- | --- |
+| 2026-03-17 | codex | Stabilization + handoff rituals | `bash scripts/qa_fast.sh` | `/opt/qa/artifacts/phpcs-1773802533.txt` | PASS |
+| 2026-03-17 | codex | Stabilization + handoff rituals | `bash scripts/qa_smoke.sh` | `/opt/qa/artifacts/qa-smoke-20260318T025817Z.txt`, `/opt/qa/artifacts/phpcs-1773802713.txt` | PASS |
+| 2026-03-17 | codex | Stabilization + handoff rituals | Manual admin happy-path (WP-CLI edits + settings reset) | `/opt/qa/artifacts/stabilization-qa-20260318T0258/manual-admin-happy-path-20260318T0258.txt` | PASS |
+| 2026-03-17 | codex | Stabilization + handoff rituals | Public board/modal captures + admin browser QC (`node scripts/capture_artifacts.js after`; Manage Visits filter/export/reopen flow) | `/opt/qa/artifacts/stabilization-qa-20260318T0258/board-after-*.png`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/modal-after-*.png`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/admin-summary.json`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/manage-visits-table-columns.csv`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/manage-visits-all-fields.csv` | PASS |
+| 2026-03-17 | codex | Stabilization + handoff rituals | `qa-pa11y http://localhost:8083`; `qa-pa11y http://localhost:8083/groomflow-staff-board/` | `/opt/qa/artifacts/pa11y-1773803582.json`, `/opt/qa/artifacts/pa11y-1773803572.json` | WARN (22 public-theme issues each; unauthenticated wrapper did not give a distinct board-auth view) |
+| 2026-03-17 | codex | Stabilization + handoff rituals | Public site screenshots (`qa-screenshot` home/contact) | `/opt/qa/artifacts/stabilization-qa-20260318T0258/site-home.png`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/site-contact-us.png` | WARN (contact page renders; home page shows blank/placeholder sections below the hero) |
+| 2026-01-08 | codex | Manage Visits admin | `bash scripts/qa_fast.sh` | `/opt/qa/artifacts/manage-visits-20260108T160036Z/qa-fast-20260108T160943Z.txt`, `/opt/qa/artifacts/phpcs-1767888583.txt` | PASS (rg --absolute-path not supported; PHP lint skipped) |
+| 2026-01-08 | codex | Manage Visits admin | `bash scripts/qa_smoke.sh` | `/opt/qa/artifacts/manage-visits-20260108T160036Z/qa-smoke-20260108T160537Z.txt`, `/opt/qa/artifacts/phpcs-1767888360.txt` | PASS |
+| 2026-01-08 | codex | Manage Visits admin | Manual verification notes | `/opt/qa/artifacts/manage-visits-20260108T160036Z/manual-verification-notes.txt` | NOT RUN |
 | 2026-01-07 | codex | Functional stabilization sprint | `bash scripts/qa_smoke.sh` | `/opt/qa/artifacts/gf-stabilization-20260107T212659/qa-smoke.txt`, `/opt/qa/artifacts/gf-stabilization-20260107T212659/phpcs-1767821238.txt` | PASS |
 | 2026-01-07 | codex | Functional stabilization sprint | Manual admin happy-path (WP-CLI create/edit for Stages→Settings) | `/opt/qa/artifacts/manual-admin-happy-path-20260107T211934.txt` | PASS |
 | 2026-01-07 | codex | Functional stabilization sprint | REST + board journey (board/load/update/move/history/photo/checkout) | `/opt/qa/artifacts/rest-board-journey-20260107T212608.txt` | PASS |

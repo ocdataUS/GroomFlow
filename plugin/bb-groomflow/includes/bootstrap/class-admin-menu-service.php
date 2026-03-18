@@ -20,6 +20,7 @@ class Admin_Menu_Service {
 	public const REPORTS_ORDER   = 80;
 	private const SUBMENU_ORDER  = array(
 		self::MENU_SLUG,
+		'bbgf-manage-visits',
 		'bbgf-stages',
 		'bbgf-views',
 		'bbgf-clients',

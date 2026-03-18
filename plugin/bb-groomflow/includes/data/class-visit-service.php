@@ -1163,6 +1163,97 @@ class Visit_Service {
 	}
 
 	/**
+	 * Reopen a checked-out visit.
+	 *
+	 * @param int    $visit_id Visit ID.
+	 * @param int    $user_id  Acting user ID.
+	 * @param string $comment  Optional comment.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function uncheckout_visit( int $visit_id, int $user_id, string $comment = '' ) {
+		$visit_row = $this->get_visit_row( $visit_id );
+		if ( null === $visit_row ) {
+			return new WP_Error(
+				'bbgf_visit_not_found',
+				__( 'Visit not found.', 'bb-groomflow' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$check_out_at = (string) ( $visit_row['check_out_at'] ?? '' );
+		$status       = sanitize_key( (string) ( $visit_row['status'] ?? '' ) );
+
+		if ( '' === $check_out_at && 'completed' !== $status ) {
+			return new WP_Error(
+				'bbgf_visit_not_checked_out',
+				__( 'This visit is already active.', 'bb-groomflow' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$now_gmt = $this->plugin->now();
+
+		$result = $this->wpdb->update(
+			$this->tables['visits'],
+			array(
+				'status'           => 'in_progress',
+				'check_out_at'     => null,
+				'timer_started_at' => $now_gmt,
+				'updated_at'       => $now_gmt,
+			),
+			array( 'id' => $visit_id ),
+			array( '%s', '%s', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		if ( false === $result ) {
+			return new WP_Error(
+				'bbgf_visit_uncheckout_failed',
+				__( 'Unable to reopen the visit.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$stage_key       = sanitize_key( (string) ( $visit_row['current_stage'] ?? '' ) );
+		$history_comment = '' === $comment ? __( 'Reopened', 'bb-groomflow' ) : sanitize_textarea_field( $comment );
+		$history_id      = $this->log_stage_history(
+			$visit_id,
+			'' !== $stage_key ? $stage_key : 'active',
+			'reopened',
+			$history_comment,
+			$user_id,
+			0
+		);
+
+		$updated = $this->get_visit(
+			$visit_id,
+			array(
+				'include_history' => true,
+			)
+		);
+
+		if ( null === $updated ) {
+			return new WP_Error(
+				'bbgf_visit_uncheckout_fetch_failed',
+				__( 'Visit reopened but could not be loaded.', 'bb-groomflow' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$history_entry = null;
+		if ( $history_id ) {
+			$history_entry = $this->get_stage_history_entry( $history_id );
+		}
+
+		$this->flush_cache( isset( $visit_row['view_id'] ) ? (int) $visit_row['view_id'] : null );
+
+		return array(
+			'visit'         => $updated,
+			'history_entry' => $history_entry,
+		);
+	}
+
+	/**
 	 * Link an existing attachment to a visit.
 	 *
 	 * @param int  $visit_id              Visit ID.
@@ -1932,6 +2023,58 @@ class Visit_Service {
 	 */
 	public function get_visit_row( int $visit_id ): ?array {
 		return $this->visit_repository->get_visit_row( $visit_id );
+	}
+
+	/**
+	 * Retrieve paginated visits for the Manage Visits admin table.
+	 *
+	 * @param array<string,mixed>  $filters  Filter values.
+	 * @param array<string,string> $ordering Sort configuration.
+	 * @param int                  $page     Page number.
+	 * @param int                  $per_page Items per page.
+	 * @return array{items:array<int,array<string,mixed>>,total:int,page:int,per_page:int}
+	 */
+	public function get_manage_visits( array $filters, array $ordering, int $page, int $per_page ): array {
+		$pagination = Query_Helpers::normalize_pagination( $page, $per_page, 100 );
+
+		$items = $this->get_manage_visits_page( $filters, $ordering, $pagination['per_page'], $pagination['offset'] );
+		$total = $this->visit_repository->get_manage_visits_count( $filters );
+
+		return array(
+			'items'    => $items,
+			'total'    => $total,
+			'page'     => $pagination['page'],
+			'per_page' => $pagination['per_page'],
+		);
+	}
+
+	/**
+	 * Fetch a single page of visits for Manage Visits.
+	 *
+	 * @param array<string,mixed>  $filters  Filter values.
+	 * @param array<string,string> $ordering Sort configuration.
+	 * @param int                  $limit    Max items.
+	 * @param int                  $offset   Offset.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_manage_visits_page( array $filters, array $ordering, int $limit, int $offset ): array {
+		$items = $this->visit_repository->get_manage_visits( $filters, $ordering, $limit, $offset );
+
+		if ( empty( $items ) ) {
+			return array();
+		}
+
+		$visit_ids    = array_map( 'intval', wp_list_pluck( $items, 'id' ) );
+		$services_map = $this->get_visit_services_map( $visit_ids );
+		$photos_map   = $this->get_visit_photos_map( $visit_ids );
+
+		foreach ( $items as $index => $item ) {
+			$visit_id                    = isset( $item['id'] ) ? (int) $item['id'] : 0;
+			$items[ $index ]['services'] = $services_map[ $visit_id ] ?? array();
+			$items[ $index ]['photos']   = $photos_map[ $visit_id ] ?? array();
+		}
+
+		return $items;
 	}
 
 	/**

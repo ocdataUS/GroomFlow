@@ -1,0 +1,7 @@
+# Breadcrumb
+- **Task asked:** Add a Manage Visits admin page (list, filters, uncheckout, exports, row details) under GroomFlow.
+- **Plan:** Add visit list query support + uncheckout service; build list table/UI + exports; wire menu/assets; run QA scripts; capture artifacts.
+- **Files changed:** `plugin/bb-groomflow/includes/data/class-visit-repository.php`, `plugin/bb-groomflow/includes/data/class-visit-service.php`, `plugin/bb-groomflow/includes/admin/class-manage-visits-admin.php`, `plugin/bb-groomflow/includes/admin/class-manage-visits-list-table.php`, `plugin/bb-groomflow/includes/admin/views/manage-visits-page.php`, `plugin/bb-groomflow/includes/bootstrap/class-admin-menu-service.php`, `plugin/bb-groomflow/includes/class-plugin.php`, `plugin/bb-groomflow/assets/js/manage-visits.js`, `plugin/bb-groomflow/assets/css/admin.css`, `qa/QA_LOG.md`.
+- **Commands executed:** `bash scripts/qa_fast.sh` (teed); `bash scripts/qa_smoke.sh` (with ARTIFACTS_DIR); `npm run build` + `bash scripts/build_plugin_zip.sh` via QA smoke.
+- **Tests & results:** QA fast log `/opt/qa/artifacts/manage-visits-20260108T160036Z/qa-fast-20260108T160943Z.txt` (PASS; rg --absolute-path warning skipped PHP lint); QA smoke log `/opt/qa/artifacts/manage-visits-20260108T160036Z/qa-smoke-20260108T160537Z.txt` (PASS); PHPCS artifacts `/opt/qa/artifacts/phpcs-1767888583.txt` + `/opt/qa/artifacts/phpcs-1767888360.txt`.
+- **Manual notes:** `/opt/qa/artifacts/manage-visits-20260108T160036Z/manual-verification-notes.txt` (UI steps documented; not executed in this session).
