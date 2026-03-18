@@ -15,6 +15,7 @@ ocasana tasks list --section 1213718066198088 --profile ocdata --json   # PM Rev
 ocasana tasks list --section 1212222472279794 --profile ocdata --json   # Ready
 git status
 git branch -a
+git checkout main
 cp docker/.env.example docker/.env   # if missing
 cd docker && docker compose up -d
 cd ..
@@ -51,7 +52,7 @@ Repeat `ssh-agent` + `ssh-add` for new shells before pushing.
 ## Release & Push
 1. Keep ZIPs out of git; confirm `git status` is clean.
 2. Commit using Conventional Commits.
-3. Push via SSH (`git push origin <branch>`).
+3. Push via SSH (`git push origin main` unless explicitly working on another branch).
 4. Update the Asana task, `AGENT_HANDOFF.md`, and `docs/context/context-pack.json`.
 5. Add or update a breadcrumb only when the task needs a durable decision/QA journal.
 

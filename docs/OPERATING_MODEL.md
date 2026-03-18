@@ -5,7 +5,7 @@ This repo now runs on an Asana-first task model.
 The goal is simple: make the live state easy for humans to read in Asana, keep the durable method in repo docs, and keep agent continuity strong even when work is interrupted or compacted.
 
 ## Core Principles
-- Manage work as tasks, not slices. One coherent problem gets one Asana task, one main Codex thread, and usually one branch.
+- Manage work as tasks, not slices. One coherent problem gets one Asana task and one main Codex thread.
 - Keep durable instructions in repo docs. Keep live task state in Asana. Keep only the current resume snapshot in `AGENT_HANDOFF.md`.
 - Keep `AGENTS.md` short and practical. Put deeper process detail in this file and `docs/ASANA_TOOLBOX.md`.
 - Ask the agent to work from four things: Goal, Context, Constraints, Done When. Put those in the Asana task notes so the task itself becomes the standing brief.
@@ -73,16 +73,16 @@ Done When:
 - Required QA or proof.
 
 Links:
-- Branch, PR, artifacts, related tasks, or production references.
+- Commit, PR if any, artifacts, related tasks, or production references.
 ```
 
 If a user request does not fit the currently active Asana task, create a new task instead of stretching the old one.
 
-## Branch And Thread Rules
+## Thread And Branch Rules
 - Keep one main Codex thread per Asana task.
 - Fork only when work truly branches into a different problem.
-- Recommended branch naming: `task/<asana-gid>-<short-slug>`.
-- If a task is review-only or read-only, reuse the current branch only when that avoids unnecessary branch churn and does not blur ownership.
+- Work directly on `main` by default.
+- Only create a separate branch when the user explicitly asks for one or the change is risky enough that isolation is worth the overhead.
 
 ## Working Ritual
 1. Start with Asana:
@@ -116,7 +116,7 @@ If a user request does not fit the currently active Asana task, create a new tas
 ## Handoff And Compaction Ritual
 Before stopping, interruption, or context compaction:
 1. Update the Asana task with:
-   - current branch
+   - current branch if not `main`
    - latest commit if any
    - artifact paths
    - blocker or review state
@@ -125,7 +125,7 @@ Before stopping, interruption, or context compaction:
 3. Run `bash scripts/generate_context_pack.sh`.
 4. Add or update a breadcrumb only if the task changed behaviour, captured a meaningful QA packet, or needs a durable narrative for future agents.
 
-The handoff should let a fresh agent resume from one Asana task, one branch, and one next action without replaying the full project history.
+The handoff should let a fresh agent resume from one Asana task and one next action without replaying the full project history.
 
 ## QA Expectations
 - Use the packaged ZIP in Docker for real verification.

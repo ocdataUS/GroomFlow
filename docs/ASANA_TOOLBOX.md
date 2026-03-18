@@ -44,7 +44,7 @@ Done When:
 - The observable completion criteria.
 
 Links:
-- Branch, PR, artifacts, related tasks, or production references.
+- Commit, PR if any, artifacts, related tasks, or production references.
 ```
 
 This mirrors the recommended Codex task brief structure. If the user request does not fit the currently active task, create a new task instead of stretching the old one.
@@ -100,6 +100,8 @@ This mirrors the recommended Codex task brief structure. If the user request doe
    - `PM Review` when QA is complete and review is needed.
    - `Closed` only when the task is actually done.
 5. Move the task into the matching section. Do not leave `PM Review` or `Blocked` items sitting in `Active`.
+
+Git policy: GroomFlow works on `main` by default. Mention a branch in the task only when the work is intentionally happening off `main`.
 
 ## Handy commands
 ```bash

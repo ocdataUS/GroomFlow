@@ -17,7 +17,7 @@ Follow this reading order when coming in cold. Everything else is reference.
 - Check GroomFlow Asana `Active`, `Blocked`, `PM Review`, then `Ready`; read the chosen task’s notes, comments, and attachments before changing code.
 - Make sure the task itself states `Goal`, `Context`, `Constraints`, and `Done When`.
 - Read `AGENT_HANDOFF.md` and any relevant breadcrumb so you know the last committed direction and the last interrupted direction.
-- Run `git status` and confirm the actual default branch/base before creating a new branch. The repo currently uses `main`.
+- Run `git status` and confirm you are on `main` unless the user explicitly asked for another branch.
 - Refresh `docs/context/context-pack.json` at handoff or before context compaction with `bash scripts/generate_context_pack.sh`.
 
 ## Reference (pull as needed)

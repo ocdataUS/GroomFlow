@@ -7,7 +7,7 @@ This is the repo entrypoint for real work. GroomFlow now uses an Asana-first tas
 1. **Read:** this file, `docs/OPERATING_MODEL.md`, `docs/ASANA_TOOLBOX.md`, `AGENT_HANDOFF.md`, and the most relevant recent breadcrumb if one exists.
 2. **Asana intake:** inspect GroomFlow `Active`, `Blocked`, `PM Review`, then `Ready`; continue or create exactly one task for the work. Read the task notes, comments, and attachments before touching code.
 3. **Task brief:** make sure the Asana task notes cover `Goal`, `Context`, `Constraints`, and `Done When`. Lock the task and move it to `Active`.
-4. **Prep repo:** `git status`; `git branch -a`; branch from the current default branch (currently `main`) when needed; copy `docker/.env.example` → `docker/.env` if missing.
+4. **Prep repo:** `git status`; `git branch -a`; stay on `main` unless you are explicitly told to use another branch; copy `docker/.env.example` → `docker/.env` if missing.
 5. **Start Docker:** `cd docker && docker compose up -d`.
 6. **Build ZIP:** from repo root run `bash scripts/build_plugin_zip.sh` (run `npm run build` first if bundles are stale).
 7. **Install in Docker:**
@@ -57,7 +57,7 @@ This is the repo entrypoint for real work. GroomFlow now uses an Asana-first tas
 
 ## Long-Running Task Continuity
 - Keep one main Codex thread per Asana task. Fork only when the work truly branches.
-- Use `AGENT_HANDOFF.md` for one current continuation snapshot: task, branch, blockers, artifacts, and exact next step.
+- Use `AGENT_HANDOFF.md` for one current continuation snapshot: task, blockers, artifacts, and exact next step. The git branch is normally `main`.
 - Before compaction or interruption, update Asana first, then `AGENT_HANDOFF.md`, then regenerate the context pack.
 
 ---
