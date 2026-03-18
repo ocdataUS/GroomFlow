@@ -1,15 +1,16 @@
 # AGENTS — GroomFlow Entrypoint (Docker)
-This is the single starting point for beta work. Follow this path exactly; everything else is reference.
+This is the repo entrypoint for real work. GroomFlow now uses an Asana-first task model: Asana is the live PM system, repo docs hold the durable method, and `AGENT_HANDOFF.md` holds the current continuation snapshot.
 
 ---
 
 ## Fast Onboarding (linear path)
-1. **Read:** This file, `docs/README.md`, `AGENT_HANDOFF.md`, and the newest file under `docs/breadcrumbs/`; open only the domain docs that match your task after that.
-2. **Plan + Asana audit:** Set a brief plan, then follow `docs/ASANA_TOOLBOX.md` before writing code. Always inspect GroomFlow `Doing` + `ToDo`, read the chosen task’s details/comments/attachments, and lock/create the task before proceeding.
-3. **Prep repo:** `git status`; `git branch -a`; confirm the current default branch (currently `main`) before creating a work branch; copy `docker/.env.example` → `docker/.env` if missing.
-4. **Start Docker:** `cd docker && docker compose up -d`.
-5. **Build ZIP:** From repo root run `bash scripts/build_plugin_zip.sh` (run `npm run build` first if bundles are stale).
-6. **Install in Docker:**
+1. **Read:** this file, `docs/OPERATING_MODEL.md`, `docs/ASANA_TOOLBOX.md`, `AGENT_HANDOFF.md`, and the most relevant recent breadcrumb if one exists.
+2. **Asana intake:** inspect GroomFlow `Active`, `Blocked`, `PM Review`, then `Ready`; continue or create exactly one task for the work. Read the task notes, comments, and attachments before touching code.
+3. **Task brief:** make sure the Asana task notes cover `Goal`, `Context`, `Constraints`, and `Done When`. Lock the task and move it to `Active`.
+4. **Prep repo:** `git status`; `git branch -a`; branch from the current default branch (currently `main`) when needed; copy `docker/.env.example` → `docker/.env` if missing.
+5. **Start Docker:** `cd docker && docker compose up -d`.
+6. **Build ZIP:** from repo root run `bash scripts/build_plugin_zip.sh` (run `npm run build` first if bundles are stale).
+7. **Install in Docker:**
    ```bash
    cd docker
    ZIP=../build/bb-groomflow-0.1.0-dev.zip   # adjust to latest build
@@ -17,10 +18,11 @@ This is the single starting point for beta work. Follow this path exactly; every
    docker compose run --rm -T wpcli wp plugin install /var/www/html/bb-groomflow.zip --force --activate
    docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8 --force   # demo data
    ```
-7. **QA:** Run `bash scripts/qa_fast.sh`, then `scripts/qa-phpcs plugin/bb-groomflow`, then the full admin happy-path (create + edit + confirm persistence for Clients, Guardians, Services, Packages, Flags, Views, Settings). Use `QA_TOOLBELT.md` for commands and artifacts.
-8. **Breadcrumb + handoff:** Create/update `docs/breadcrumbs/<date>-<topic>.md`, keep `qa/QA_LOG.md` current, update `AGENT_HANDOFF.md`, and refresh `bash scripts/generate_context_pack.sh` before you stop.
+8. **QA:** run `bash scripts/qa_fast.sh`, then `scripts/qa-phpcs plugin/bb-groomflow`, then the full admin happy-path (create + edit + confirm persistence for Clients, Guardians, Services, Packages, Flags, Views, Settings). Use `QA_TOOLBELT.md` for commands and artifacts.
+9. **Stop cleanly:** update Asana with status/artifacts/next step, update `AGENT_HANDOFF.md`, run `bash scripts/generate_context_pack.sh`, and add a breadcrumb only when the task changed behaviour, captured meaningful QA, or needs a durable decision trail.
 
 ## Documentation Map (How to Find What You Need)
+- PM model & continuity → `docs/OPERATING_MODEL.md`, `docs/ASANA_TOOLBOX.md`, `AGENT_HANDOFF.md`
 - Product intent & visit flows → `SPEC.md` — requirements, terminology, guardrails.
 - Architecture & directories → `docs/ARCHITECTURE.md` — component boundaries and where code lives.
 - REST endpoints & controllers → `docs/API.md` — routes, payloads, capabilities, public vs internal.
@@ -31,19 +33,19 @@ This is the single starting point for beta work. Follow this path exactly; every
 - Hotfix policy → `docs/HOTFIX_PROTOCOL.md` — allowed/disallowed hotfix scope and steps.
 - UX patterns → `docs/UX_GUIDE.md` — interaction/visual rules for board, modals, controls.
 - Security & access → `docs/SECURITY.md` — capability/nonce rules, public token handling.
-- Continuity & history → `AGENT_HANDOFF.md`, `docs/breadcrumbs/` — handoffs and historical notes (reference-only).
+- Continuity & history → `AGENT_HANDOFF.md`, `docs/breadcrumbs/` — current handoff plus durable task journals.
 
 ## Working Mode — Beta Stabilization
 - v0 is feature-complete; prioritize regressions and hotfixes over net-new work.
-- Treat Asana + `AGENT_HANDOFF.md` as mandatory state, not optional reference. Do the task audit before code, QA, or docs.
+- Treat Asana as the source of active task state. Treat `AGENT_HANDOFF.md` as the current resume snapshot.
 - Use packaged ZIPs in Docker only—never bind the plugin directory into containers.
 - Keep WordPress standards intact: sanitize/escape, use `$wpdb->prepare`, enqueue assets via hooks, and ensure `scripts/qa-phpcs plugin/bb-groomflow` passes before handoff.
 - After any install, reseed demo data and rerun the admin happy-path.
 - Update SPEC/docs only when behaviour changes; avoid future-roadmap drafts.
 
 ## QA & Handoff
-- Required before handoff: packaged ZIP installed in Docker, demo data seeded, `scripts/qa-phpcs plugin/bb-groomflow` clean (document any intentional ignores), admin happy-path confirmed, artifacts stored under `/opt/qa/artifacts` and referenced in the breadcrumb.
-- Required before handoff: Asana task comment updated with status + artifact paths; `AGENT_HANDOFF.md` updated with task/branch/blockers/next action; `docs/context/context-pack.json` refreshed via `bash scripts/generate_context_pack.sh`.
+- Required before handoff: packaged ZIP installed in Docker, demo data seeded, `scripts/qa-phpcs plugin/bb-groomflow` clean (document any intentional ignores), admin happy-path confirmed, artifacts stored under `/opt/qa/artifacts`, and results logged in Asana + `qa/QA_LOG.md` with a breadcrumb only when durable narrative is needed.
+- Required before handoff: Asana task updated with status + artifact paths + exact next step, `AGENT_HANDOFF.md` updated, and `docs/context/context-pack.json` refreshed via `bash scripts/generate_context_pack.sh`.
 - Keep commits conventional; never commit build ZIPs. Push via SSH as needed (setup in `docs/workflow.md`).
 
 ## Documentation Governance — Document as You Discover
@@ -51,17 +53,12 @@ This is the single starting point for beta work. Follow this path exactly; every
 - Documentation updates are part of task completion; do not defer them.
 - Route details into existing docs rather than creating new ones when coverage exists.
 - Keep updates concise and scoped to the domain doc; avoid duplicating content across files.
-- Use breadcrumbs for slice history; do not treat them as canonical instructions.
+- Use breadcrumbs for significant task history when they add durable value; do not treat them as the live PM system.
 
 ## Long-Running Task Continuity
-- Use `AGENT_HANDOFF.md` to record decisions, current state, blockers, and next actions for any task likely to exceed one session.
-- Treat `AGENT_HANDOFF.md` as authoritative for continuation; closed decisions may not be reopened without Product Owner direction.
-- Create/update it before stopping work; include Asana task/link/status, branch, `git status`, latest breadcrumb, artifact paths, blockers, exact next step, and any runtime mismatch the next agent must know.
-
-## Context Compaction Ritual
-- Before ending a slice or when context gets tight, update `AGENT_HANDOFF.md` first, then run `bash scripts/generate_context_pack.sh`.
-- The handoff must be specific enough that a fresh agent can resume from one next action, one branch, and one Asana task without replaying the whole project history.
-- If work is interrupted mid-slice, leave the exact next command, screen, or file to open in both Asana and `AGENT_HANDOFF.md`.
+- Keep one main Codex thread per Asana task. Fork only when the work truly branches.
+- Use `AGENT_HANDOFF.md` for one current continuation snapshot: task, branch, blockers, artifacts, and exact next step.
+- Before compaction or interruption, update Asana first, then `AGENT_HANDOFF.md`, then regenerate the context pack.
 
 ---
 

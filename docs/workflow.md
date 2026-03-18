@@ -8,6 +8,11 @@ Reference for moving from shell login to a tested ZIP running in Docker WordPres
 
 ## Quick Start
 ```bash
+ocasana projects briefs-get --project 1212222472264357 --profile ocdata --json
+ocasana tasks list --section 1212222470604323 --profile ocdata --json   # Active
+ocasana tasks list --section 1213732788211928 --profile ocdata --json   # Blocked
+ocasana tasks list --section 1213718066198088 --profile ocdata --json   # PM Review
+ocasana tasks list --section 1212222472279794 --profile ocdata --json   # Ready
 git status
 git branch -a
 cp docker/.env.example docker/.env   # if missing
@@ -41,13 +46,14 @@ Repeat `ssh-agent` + `ssh-add` for new shells before pushing.
 1. `bash scripts/qa_fast.sh` (fast local gate while iterating).
 2. `scripts/qa-phpcs plugin/bb-groomflow` (repo ruleset / handoff gate).
 3. Manual admin happy-path: create + edit + confirm persistence for Clients, Guardians, Services, Packages, Flags, Views, Settings.
-4. When behaviour changes, run `bash scripts/qa_smoke.sh` or targeted WP-CLI/browser checks; save artifacts to `/opt/qa/artifacts` and log in breadcrumbs + `qa/QA_LOG.md`.
+4. When behaviour changes, run `bash scripts/qa_smoke.sh` or targeted WP-CLI/browser checks; save artifacts to `/opt/qa/artifacts` and log in Asana + `qa/QA_LOG.md`, with a breadcrumb when durable narrative is useful.
 
 ## Release & Push
 1. Keep ZIPs out of git; confirm `git status` is clean.
 2. Commit using Conventional Commits.
 3. Push via SSH (`git push origin <branch>`).
-4. Update breadcrumbs with actions, QA results, and artifact paths.
+4. Update the Asana task, `AGENT_HANDOFF.md`, and `docs/context/context-pack.json`.
+5. Add or update a breadcrumb only when the task needs a durable decision/QA journal.
 
 ## Troubleshooting
 - **SSH auth failed:** rerun `ssh-agent` + `ssh-add`; confirm the remote uses SSH.

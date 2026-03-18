@@ -85,7 +85,7 @@ All artifacts land in: `/opt/qa/artifacts`.
 - **Admin Forms Regression (manual + scripted)**
   - After every install, walk the happy path for Stages, Guardians, Clients, Services, Packages, Flags, Views, and Settings: create a record, save, re-open in edit mode, and confirm all previously entered values re-populate (emoji/color pickers, selects, notes).
   - For Packages specifically, double-check that included services stay checked and their order inputs persist to prevent the "Select at least one service" regression.
-  - Log the results in your breadcrumb. If a bug appears, capture repro steps plus any `qa-wp` or screenshot artifacts.
+  - Log the results in `qa/QA_LOG.md` and the Asana task. If a bug appears, capture repro steps plus any `qa-wp` or screenshot artifacts.
   - Automate repeat checks when possible with WP-CLI (`qa-wp /var/www/html option get ...`) or lightweight scripting; Playwright is available for UI capture scripts if needed.
 
 ### Manual Admin Happy-Path Template
@@ -107,7 +107,7 @@ PREFIX=$(docker compose run --rm -T wpcli wp config get table_prefix | tr -d '\r
 } | tee "$ART"
 ```
 
-Add a short markdown checklist (“Clients ✅”, “Settings ✅”) at the top of the artifact so reviewers can confirm every admin surface was exercised. Reference `$ART` inside `qa/QA_LOG.md` and the breadcrumb for the slice.
+Add a short markdown checklist (“Clients ✅”, “Settings ✅”) at the top of the artifact so reviewers can confirm every admin surface was exercised. Reference `$ART` inside `qa/QA_LOG.md` and the Asana task; add a breadcrumb when the task needs a durable narrative.
 
 ---
 

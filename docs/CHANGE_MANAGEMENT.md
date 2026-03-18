@@ -13,13 +13,13 @@ Mike iterates quickly. Expect pivots or “can we try…” experiments after ha
 
 3. **Agree on the plan**
    - Propose options (e.g., quick experiment vs. full feature build).
-   - Confirm priority shift and whether it replaces or augments the current task/regression.
-   - Update the plan tool with the new direction before coding.
+   - Decide whether this belongs in the current Asana task or should become a new task.
+   - Update the Asana task notes (`Goal`, `Context`, `Constraints`, `Done When`) and the plan tool before coding.
 
 4. **Execute & document**
    - Update SPEC and any relevant docs (AGENTS/workflow/architecture) to reflect the new reality.
-   - Capture the change and rationale in the breadcrumb for traceability.
-   - If scope reverts later, clean up docs to avoid stale guidance.
+   - Capture the change and rationale in the Asana task. Add a breadcrumb when the task needs a durable decision/QA journal.
+   - If scope reverts later, clean up docs and task notes to avoid stale guidance.
 
 5. **Debrief**
    - After delivering the change, summarize impacts (“We swapped to staged polling; this delays notification QA by a day”).

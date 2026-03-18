@@ -1,6 +1,10 @@
-# REFACTOR_LOG — Slice Ledger
+# REFACTOR_LOG — Legacy Slice Ledger
 
-Record every slice here. Keep entries chronological (newest on top). Use the template below:
+Historical archive from the old slice-based workflow.
+
+Do not add new rows. New work is managed in Asana and documented through `AGENT_HANDOFF.md`, `qa/QA_LOG.md`, and optional breadcrumbs when needed.
+
+Existing entries remain useful reference for historical context:
 
 | Date | Agent | Branch | Slice | Status | Plan / Scope | QA & Artifacts | Notes / Next Steps |
 | 2025-12-23 | codex | refactor/kanban-ux-refresh | Kanban UX refresh | Completed | Modernize the board UX for salon flow: hero stats, streamlined toolbar/view switching, active-filter chips, capacity meter per column, refreshed card layout with stage badge/guardian/timer emphasis, and updated styling while keeping REST/drag-drop flows intact. | ZIP rebuild + Docker install/seed (`bash scripts/build_plugin_zip.sh`; `docker compose cp ../build/bb-groomflow-0.1.0-dev.zip ...` → `docker compose run --rm -T wpcli wp plugin install ... --force --activate`; `docker compose run --rm -T wpcli wp bbgf visits seed-demo --count=8 --force`); `npm run build`; `qa-phpcs plugin/bb-groomflow` → `/opt/qa/artifacts/phpcs-1766472465.txt`; Manual admin happy-path (WP-CLI edits Clients→Settings) → `/opt/qa/artifacts/manual-admin-happy-path-20251223T064823.txt`. | Share board preview + admin creds for PM review; monitor for feedback on the new hero/filter chips and capacity meter; lobby/display mode now uses hero fullscreen button (toolbar hidden). |

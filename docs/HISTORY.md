@@ -1,4 +1,8 @@
-# HISTORY — GroomFlow Refactor Timeline
+# HISTORY — Legacy Refactor Timeline
+
+Historical archive from the earlier slice-based workflow.
+
+Do not append new rows here. New work is managed in Asana and documented through `AGENT_HANDOFF.md`, `qa/QA_LOG.md`, and optional breadcrumbs when durable narrative is needed.
 
 | Date | Slice / Topic | Summary | QA Evidence |
 | --- | --- | --- | --- |
@@ -12,4 +16,4 @@
 | 2025-11-08 | S1 · PHPCS & Coding Standards | Removed blanket PHPCS suppressions by refactoring schema upgrades to `dbDelta`, documenting board visibility helpers, and aligning CLI/data/notification services with WPCS (prepared queries, wp_rand/timestamps, array alignment). Rebuilt + redeployed the plugin ZIP into Docker afterwards. | `qa-phpcs plugin/bb-groomflow` → `/opt/qa/artifacts/phpcs-1762654083.txt`; manual admin happy-path log → `/opt/qa/artifacts/manual-admin-happy-path-20251108.txt`; ZIP installed via Docker wpcli + demo reseed noted in breadcrumb. |
 | 2025-11-08 | Compliance Audit & Sentinel Prep | Reviewed full plugin for WP coding-standard compliance, rebuilt ZIP, installed in Docker, seeded demo data, added stateless-agent playbook (AGENTS/PROMPT/PROJECT_PLAN/etc.). | `qa-phpcs plugin/bb-groomflow` → `/opt/qa/artifacts/phpcs-bbgf-20251108T174330.txt`; Docker install logs in breadcrumb `docs/breadcrumbs/2025-11-08-compliance-audit.md`. |
 
-Append new rows whenever a slice lands. Reference artifact paths so future agents can verify the state you left behind.
+Existing rows remain useful reference for how the plugin evolved and where older QA artifacts came from.

@@ -2,15 +2,15 @@
 
 Status: pm_review (2026-03-17)
 
-- Task: `Stabilization: repo tidy, full QA/QC, onboarding and handoff ritual hardening` (Asana `1213718549374304`)
+- Task: `Redesign repo PM model around Asana + Codex` (Asana `1213732779650114`)
 - Branch: `refactor/stabilization-qa-handoff-rituals`
-- Summary: Recovered the interrupted January 8 Manage Visits slice, hardened onboarding/Asana/handoff/context-pack rituals, fixed the QA helper regressions, and completed Docker QA across the board, admin happy-path, and Manage Visits export/reopen flow.
-- Breadcrumb: `docs/breadcrumbs/2026-03-17-stabilization-qa-handoff-rituals.md`
-- QA artifacts: `/opt/qa/artifacts/qa-smoke-20260318T025817Z.txt`, `/opt/qa/artifacts/phpcs-1773802713.txt`, `/opt/qa/artifacts/stabilization-qa-20260318T0258/`, `/opt/qa/artifacts/pa11y-1773803582.json`, `/opt/qa/artifacts/pa11y-1773803572.json`
-- Runtime mismatches / findings:
-  - The persisted Docker site is still WordPress `6.8.3` even though `docker/docker-compose.yml` pins `wordpress:6.9.0-php8.2-apache`.
-  - Manage Visits is now visually/functionally verified in Docker, including details, filtered exports, and reopen from a completed row.
-  - The public marketing-site home page currently shows blank/placeholder sections below the hero in the prototype screenshots.
-  - Unauthenticated `qa-pa11y` against the public site/theme reported 22 accessibility issues (missing linked-logo alt text and several contrast failures).
-- Blockers: None for plugin continuation. The public-site/theme QA findings need triage as a follow-up decision.
-- Exact next step: Push this branch, decide whether the public-site visual/accessibility findings become a separate Asana slice, and keep task `1213718549374304` in PM Review until that triage is complete.
+- Summary: Replaced the active slice-based PM ritual with an Asana-first operating model, shortened the repo entrypoint, added a canonical operating-model doc, updated the Asana toolbox/workflow docs, converted legacy history ledgers to archive-only status, created the GroomFlow Asana project brief, and expanded the context pack to carry the operating model plus live Asana state.
+- Breadcrumb: `docs/breadcrumbs/2026-03-17-asana-first-operating-model.md`
+- Validation: `git diff --check` (PASS); `bash scripts/generate_context_pack.sh` (PASS)
+- Artifacts: `docs/context/context-pack.json`
+- Continuity notes:
+  - The GroomFlow Asana project now uses `Inbox`, `Ready`, `Active`, `Blocked`, `PM Review`, and `Closed`.
+  - The GroomFlow Asana project brief now exists as `1213718552434906` (`GroomFlow Operating Model`).
+  - This branch still contains the earlier stabilization/QA commits that are already in PM Review; if you need strict one-task-one-branch hygiene before merge, split or sequence the review deliberately.
+- Blockers: None.
+- Exact next step: Review the new operating model in Asana + repo docs, then decide whether to push/merge this branch as-is or split the PM redesign from the earlier stabilization PM-review work before merge.
